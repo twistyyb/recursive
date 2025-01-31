@@ -33,8 +33,8 @@ const SurveyResponse = {
             // Get or create survey response
             let surveyResponse;
             if (!querySnapshot.empty) {
-                const document = querySnapshot.docs[0];
-                surveyResponse = { id: document.id, ...document.data() };//should this simply be docs[0]
+              const document = querySnapshot.docs[0];
+              surveyResponse = { id: document.id, ...document.data() };
             } else {
                 surveyResponse = {
                     phone: phone,
@@ -69,6 +69,9 @@ const SurveyResponse = {
             }
 
             // Save to Firebase
+            if (!Array.isArray(survey) || survey.length === 0) {
+              throw new Error('Invalid survey data');
+            }
             if (surveyResponse.id) {
                 const docRef = doc(db, 'surveyResponses', surveyResponse.id);
                 await updateDoc(docRef, surveyResponse);
@@ -102,6 +105,7 @@ const SurveyResponse = {
         console.log('Firebase connection test successful');
     } catch (error) {
         console.error('Firebase connection test failed:', error);
+        process.exit(1);
     }
 })();
 

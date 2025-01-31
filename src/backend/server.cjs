@@ -9,75 +9,91 @@ const authToken = process.env.TWILIO_AUTH_TOKEN;
 const client = twilio(accountSid, authToken);
 
 const express = require('express');
+// Add these middleware configurations before your routes
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Debug middleware to log all requests
+app.use((req, res, next) => {
+    console.log('Incoming request:', {
+        method: req.method,
+        path: req.path,
+        body: req.body,
+        headers: req.headers
+    });
+    next();
+});
+
+
 const VoiceResponse = require('twilio').twiml.VoiceResponse;
 const SurveyResponse = require('../components/SurveyResponse.cjs');
 
-const app = express();
 
 const phone = "+17473347145";
 const survey = require('../assets/survey_data.cjs').survey;
-var input = undefined;
+
 
 
 
 // Returns TwiML which prompts the caller to record a message
 app.post('/voice', async (req, res) => {
     const twiml = new VoiceResponse();
+    var input = req.body.RecordingUrl || req.body.Digits;
+
+    console.log("input", input);
+    function say(text){
+      twiml.say({voice: 'alice'}, text);
+    }
+    function respond() {
+      res.type('text/xml');
+      res.send(twiml.toString());
+    }
     
     try {
-        console.log('Received Twilio request:', {
-            From: req.body.From,
-            RecordingUrl: req.body.RecordingUrl,
-            Digits: req.body.Digits
-        });
-
+        // Call the advanceSurvey function
         const result = await SurveyResponse.advanceSurvey({
-            phone: req.body.From,
-            input: req.body.RecordingUrl || req.body.Digits,
+            phone: phone,
+            input: input,
             survey: survey
         });
 
         const { surveyResponse, nextQuestionIndex } = result;
         
+        // Handle the response
         if (nextQuestionIndex < survey.length) {
-            const nextQuestion = survey[nextQuestionIndex];
-            twiml.say({ voice: 'alice' }, nextQuestion.text);
-            
-            if (nextQuestion.type === 'voice') {
-                // For voice recording questions
-                twiml.record({
-                    action: '/voice',  // Important: This makes it loop back
-                    maxLength: 30,
-                    timeout: 5,
-                    transcribe: true
-                });
-            } else {
-                // For numeric input questions
-                const gather = twiml.gather({
-                    action: '/voice',  // Important: This makes it loop back
-                    numDigits: 1,
-                    timeout: 10
-                });
-                gather.say({ voice: 'alice' }, 'Press a number to respond.');
-            }
+          const nextQuestion = survey[nextQuestionIndex];
+          say(nextQuestion.text);
+          
+            // Record the response
+            twiml.record({
+                action: '/voice',
+                maxLength: 30,
+                minLength: 3,
+                transcribe: true,
+                transcribeCallback: '/transcription/' + surveyResponse.id + '/' + nextQuestionIndex,
+                timeout: 3,
+                trim: 'do-not-trim'
+            });
+          
         } else {
-            twiml.say({ voice: 'alice' }, 'Thank you for completing the survey!');
-            twiml.hangup();
+            say('Thank you for completing the survey!');
+            if (surveyResponse.id) {
+              await updateDoc(doc(db, 'surveyResponses', surveyResponse.id), { complete: true });
+            }
+            return respond();
         }
 
     } catch (error) {
         console.error('Error in voice endpoint:', error);
-        twiml.say({ voice: 'alice' }, 'An error occurred. Please try again later.');
-        twiml.hangup();
+        say('An error occurred. Please try again later.');
     }
-
-    res.type('text/xml');
-    res.send(twiml.toString());
+    respond();
 });
 
 // Trasncription callback - called by Twilio with transcription of recording
 // Will update survey response outside the interview call flow
-exports.transcription = function(request, response) {
+app.post('/transcription/:responseId/:questionIndex', (request, response) => {
   var responseId = request.params.responseId;
   var questionIndex = request.params.questionIndex;
   var transcript = request.body.TranscriptionText;
@@ -94,7 +110,7 @@ exports.transcription = function(request, response) {
           return response.status(err ? 500 : 200).end();
       });
   });
-};
+});
 
 
 
