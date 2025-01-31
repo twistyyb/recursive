@@ -1,111 +1,108 @@
-const { db } = require("../backend/firebase.cjs"); // Assuming Firebase is initialized elsewhere
-const { collection, query, where, limit, getDocs, addDoc, doc, updateDoc } = require('firebase/firestore');
+require('dotenv').config();
+const { 
+    db, 
+    collection, 
+    query, 
+    where, 
+    limit, 
+    getDocs, 
+    addDoc, 
+    doc, 
+    updateDoc 
+} = require("../backend/firebase.cjs");
 
-class SurveyResponse {
-  constructor(data) {
-    this.phone = data.phone;
-    this.complete = data.complete || false;
-    this.responses = data.responses || [];
-    this.id = data.id || null; // Firestore document ID
-  }
+// Export functions that server.cjs will use
+const SurveyResponse = {
+    // Function to advance the survey
+    async advanceSurvey({ phone, input, survey }) {
+        try {
+            //console.log('Starting advanceSurvey with:', { phone, input, survey });
+            //create reference to surveyResponses collection
+            const surveyCollection = collection(db, 'surveyResponses');
 
-  // Save the survey response to Firestore
-  async save() {
-    try {
-      if (this.id) {
-        // Update existing document
-        const docRef = doc(db, 'surveyResponses', this.id);
-        await updateDoc(docRef, {
-          phone: this.phone,
-          complete: this.complete,
-          responses: this.responses,
-        });
-      } else {
-        // Create new document
-        const collectionRef = collection(db, 'surveyResponses');
-        const docRef = await addDoc(collectionRef, {
-          phone: this.phone,
-          complete: this.complete,
-          responses: this.responses,
-        });
-        this.id = docRef.id;
-      }
-    } catch (error) {
-      console.error('Error saving survey response:', error);
-      throw error;
-    }
-  }
+            // Find an incomplete survey response
+            const q = query(
+                surveyCollection,
+                where('phone', '==', phone),
+                where('complete', '==', false),
+                limit(1)
+            );
+            const querySnapshot = await getDocs(q);
+            console.log('Query executed, empty?', querySnapshot.empty);
+            
+            // Get or create survey response
+            let surveyResponse;
+            if (!querySnapshot.empty) {
+                const document = querySnapshot.docs[0];
+                surveyResponse = { id: document.id, ...document.data() };//should this simply be docs[0]
+            } else {
+                surveyResponse = {
+                    phone: phone,
+                    complete: false,
+                    responses: []
+                };
+            }
 
-  // Static method to advance the survey
-  static async advanceSurvey(args) {
-    const { phone, input, survey } = args;
+            // Process the input
+            const responseLength = surveyResponse.responses.length;
+            const currentQuestion = survey[responseLength];
+            console.log("length of responses", responseLength);
+            console.log("input", input);
 
-    try {
-      // Find an incomplete survey response
-      const surveyCollection = collection(db, 'surveyResponses');
-      const q = query(
-        surveyCollection,
-        where('phone', '==', phone),
-        where('complete', '==', false),
-        limit(1)
-      );
-      const querySnapshot = await getDocs(q);
-      
-      let surveyResponse;
-      if (!querySnapshot.empty) {
-        const doc = querySnapshot.docs[0];
-        surveyResponse = new SurveyResponse({ id: doc.id, ...doc.data() });
-      } else {
-        surveyResponse = new SurveyResponse({ phone });
-      }
+            // If no input, re-ask the current question
+            function reask() {
+              return { surveyResponse, nextQuestionIndex: responseLength };
+            }
+            if (input === undefined) {
+              return { surveyResponse, nextQuestionIndex: responseLength };
+            }
 
-      // Process the input
-      const responseLength = surveyResponse.responses.length;
-      const currentQuestion = survey[responseLength];
+            // Save the question type and answer
+            const questionResponse = {};
+            questionResponse.answer = input;
+            questionResponse.text = currentQuestion.text;
+            surveyResponse.responses.push(questionResponse);
 
-      // If no input, re-ask the current question
-      if (input === undefined) {
-        return { surveyResponse, nextQuestionIndex: responseLength };
-      }
+            // Check if survey is complete
+            if (surveyResponse.responses.length === survey.length) {
+                surveyResponse.complete = true;
+            }
 
-      // Process the input based on the question type
-      const questionResponse = {};
-      if (currentQuestion.type === 'boolean') {
-        questionResponse.answer = input === '1' || input.toLowerCase() === 'yes';
-      } else if (currentQuestion.type === 'number') {
-        const num = Number(input);
-        if (isNaN(num)) {
-          // Invalid input, re-ask the question
-          return { surveyResponse, nextQuestionIndex: responseLength };
-        } else {
-          questionResponse.answer = num;
+            // Save to Firebase
+            if (surveyResponse.id) {
+                const docRef = doc(db, 'surveyResponses', surveyResponse.id);
+                await updateDoc(docRef, surveyResponse);
+            } else {
+                const docRef = await addDoc(collection(db, 'surveyResponses'), surveyResponse);
+                surveyResponse.id = docRef.id;
+            }
+
+            return { 
+                surveyResponse, 
+                nextQuestionIndex: responseLength + 1 
+            };
+        } catch (error) {
+            console.error('Error in advanceSurvey:', error);
+            console.error('Error details:', {
+                code: error.code,
+                message: error.message,
+                stack: error.stack
+            });
+            throw error;
         }
-      } else if (input.indexOf('http') === 0) {
-        // Input is a recording URL
-        questionResponse.recordingUrl = input;
-      } else {
-        // Default to raw input
-        questionResponse.answer = input;
-      }
-
-      // Save the question type
-      questionResponse.type = currentQuestion.type;
-      surveyResponse.responses.push(questionResponse);
-
-      // Mark as complete if all questions are answered
-      if (surveyResponse.responses.length === survey.length) {
-        surveyResponse.complete = true;
-      }
-
-      // Save the updated survey response
-      await surveyResponse.save();
-
-      // Return the updated survey response and the next question index
-      return { surveyResponse, nextQuestionIndex: responseLength + 1 };
-    } catch (error) {
-      console.error('Error advancing survey:', error);
-      throw error;
     }
-  }
-}
-var SurveyResponse = model('SurveyResponse', SurveyResponseSchema);
+};
+
+// Test the Firebase connection when the module loads
+(async function testConnection() {
+    try {
+        const testCollection = collection(db, 'surveyResponses');
+        const testQuery = query(testCollection, limit(1));
+        await getDocs(testQuery);
+        console.log('Firebase connection test successful');
+    } catch (error) {
+        console.error('Firebase connection test failed:', error);
+    }
+})();
+
+module.exports = SurveyResponse;

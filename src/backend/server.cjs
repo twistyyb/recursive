@@ -11,84 +11,95 @@ const client = twilio(accountSid, authToken);
 const express = require('express');
 const VoiceResponse = require('twilio').twiml.VoiceResponse;
 const SurveyResponse = require('../components/SurveyResponse.cjs');
-var survey = require('../assets/survey_data.cjs');
 
 const app = express();
+
 const phone = "+17473347145";
+const survey = require('../assets/survey_data.cjs').survey;
+var input = undefined;
+
+
 
 // Returns TwiML which prompts the caller to record a message
-app.post('/voice', (request, response) => {
-  var input = undefined;
-  var twiml = new VoiceResponse();
-
-  function say(text) {
-    twiml.say({ voice: 'Polly.Amy'}, text);
-  }
-  function respond() {
-    response.type('text/xml');
-    response.send(twiml.toString());
-  }
-
-  say('Welcome to Recursive Interview.');
-
-  // Find an in-progess survey if one exists, otherwise create one
-  SurveyResponse.advanceSurvey({
-    phone: phone,
-    input: input,
-    survey: survey}, function(err, surveyResponse, questionIndex) {
-    var question = survey[questionIndex];
-
-    if (err || !surveyResponse) {
-        say('Terribly sorry, but an error has occurred. Goodbye.');
-        return respond();
-    }
-
-    // If question is null, we're done!
-    if (!question) {
-        say('Thank you for taking this survey. Goodbye!');
-        return respond();
-    }
-
-    // Add a greeting if this is the first question
-    if (questionIndex === 0) {
-        say('Thank you for taking our survey. Please listen carefully '
-            + 'to the following questions.');
-    }
-
-    // Otherwise, ask the next question
-    say(question.text);
-
-    // Depending on the type of question, we either need to get input via
-    // DTMF tones or recorded speech
-    if (question.type === 'text') {
-        say('Please record your response after the beep. '
-            + 'Press any key to finish.');
-        twiml.record({
-            transcribe: true,
-            transcribeCallback: '/voice/' + surveyResponse._id
-                + '/transcribe/' + questionIndex,
-            maxLength: 60
+app.post('/voice', async (req, res) => {
+    const twiml = new VoiceResponse();
+    
+    try {
+        console.log('Received Twilio request:', {
+            From: req.body.From,
+            RecordingUrl: req.body.RecordingUrl,
+            Digits: req.body.Digits
         });
-    } else if (question.type === 'boolean') {
-        say('Press one for "yes", and any other key for "no".');
-        twiml.gather({
-            timeout: 10,
-            numDigits: 1
+
+        const result = await SurveyResponse.advanceSurvey({
+            phone: req.body.From,
+            input: req.body.RecordingUrl || req.body.Digits,
+            survey: survey
         });
-    } else {
-        // Only other supported type is number
-        say('Enter the number using the number keys on your telephone.'
-            + ' Press star to finish.');
-        twiml.gather({
-            timeout: 10,
-            finishOnKey: '*'
-        });
+
+        const { surveyResponse, nextQuestionIndex } = result;
+        
+        if (nextQuestionIndex < survey.length) {
+            const nextQuestion = survey[nextQuestionIndex];
+            twiml.say({ voice: 'alice' }, nextQuestion.text);
+            
+            if (nextQuestion.type === 'voice') {
+                // For voice recording questions
+                twiml.record({
+                    action: '/voice',  // Important: This makes it loop back
+                    maxLength: 30,
+                    timeout: 5,
+                    transcribe: true
+                });
+            } else {
+                // For numeric input questions
+                const gather = twiml.gather({
+                    action: '/voice',  // Important: This makes it loop back
+                    numDigits: 1,
+                    timeout: 10
+                });
+                gather.say({ voice: 'alice' }, 'Press a number to respond.');
+            }
+        } else {
+            twiml.say({ voice: 'alice' }, 'Thank you for completing the survey!');
+            twiml.hangup();
+        }
+
+    } catch (error) {
+        console.error('Error in voice endpoint:', error);
+        twiml.say({ voice: 'alice' }, 'An error occurred. Please try again later.');
+        twiml.hangup();
     }
 
-    // render TwiML response
-    respond();
-  });
+    res.type('text/xml');
+    res.send(twiml.toString());
 });
+
+// Trasncription callback - called by Twilio with transcription of recording
+// Will update survey response outside the interview call flow
+exports.transcription = function(request, response) {
+  var responseId = request.params.responseId;
+  var questionIndex = request.params.questionIndex;
+  var transcript = request.body.TranscriptionText;
+
+  SurveyResponse.findById(responseId, function(err, surveyResponse) {
+      if (err || !surveyResponse || !surveyResponse.responses[questionIndex]) {
+          console.log("Error could not find survey response");
+          return response.status(500).end();
+      }
+      // Update appropriate answer field
+      surveyResponse.responses[questionIndex].answer = transcript;
+      surveyResponse.markModified('responses');
+      surveyResponse.save(function(err, doc) {
+          return response.status(err ? 500 : 200).end();
+      });
+  });
+};
+
+
+
+
+
 
 // Create an HTTP server and listen for requests on port 3000
 app.listen(3000);
@@ -105,3 +116,4 @@ async function createCall() {
 }
 
 createCall();
+//console.log(survey.survey.length);

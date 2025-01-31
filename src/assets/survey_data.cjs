@@ -2,14 +2,16 @@
 const survey = [
     {
         text: 'Please tell us your age.',
-        type: 'number'
+        type: 'text'
     },
     {
         text: 'Have you ever jump-kicked a lemur?',
-        type: 'boolean'
+        type: 'text'
     },
     {
         text: 'Who is your favorite Teenage Mutant Ninja Turtle and why?',
         type: 'text'
     }
 ];
+
+module.exports = { survey };
