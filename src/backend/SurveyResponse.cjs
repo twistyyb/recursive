@@ -10,54 +10,68 @@ const {
     doc, 
     updateDoc,
     getDoc 
-} = require("../backend/firebase.cjs");
+} = require("./firebase.cjs");
 const { getFirestore } = require('firebase/firestore');
-const modifier = new Date().toISOString();
 
 // Export functions that server.cjs will use
 const SurveyResponse = {
-  // Function to advance the survey
-  async advanceSurvey({ phone, input, survey }, cb) {
-    try {
-      console.log('Starting advanceSurvey');
-      //create reference to surveyResponses collection
-      const surveyCollection = collection(db, 'surveyResponses');
+  
+  // Function to create a new survey response
+  async createSurveyResponse({ responseId, phone, survey }) {      //create reference to surveyResponses collection
+    const surveyCollection = collection(db, 'surveyResponses');
+    const surveyResponse = {
+      responseId: responseId,//assign a unique id to the survey response
+      phone: phone,
+      complete: false,
+      responses: [],
+      survey: survey
+    };
 
-      // Find an incomplete survey response
-      const q = query(
-        surveyCollection,
-        where('phone', '==', phone),
-        where('complete', '==', false),
-        limit(1)
-      );
-      const querySnapshot = await getDocs(q);
-      console.log('Query executed, empty?', querySnapshot.empty);
-      
-      // Get or create survey response
+    const docRef = doc(surveyCollection, responseId);
+    await setDoc(docRef, surveyResponse);
+    console.log('Created new document:', {
+      docId: docRef.id,
+      surveyResponseId: surveyResponse.responseId
+    });
+    return;
+  },
+
+  // Function to advance the survey
+  async advanceSurvey({ responseId, input }, cb) {
+    try {
+      console.log('Starting advanceSurvey with responseId:', responseId);
+
+      // Find correlated survey response
       let surveyResponse;
-      if (!querySnapshot.empty) {
-        const document = querySnapshot.docs[0];
-        surveyResponse = { id: document.id, ...document.data() };
-      } else {
-        surveyResponse = {
-          id: "survey" + modifier,//assign a unique id to the survey response
-          phone: phone,
-          complete: false,
-          responses: [],
-          intialized: false
-        };
-        console.log("newid", surveyResponse.id);
+      try {
+        const docRef = doc(db, 'surveyResponses', responseId);
+        const docSnapshot = await getDoc(docRef);
+        
+        if (!docSnapshot.exists()) {
+          console.error('Survey response not found:', responseId);
+          throw new Error('Survey response not found');
+        }
+        
+        surveyResponse = { id: docSnapshot.id, ...docSnapshot.data() };
+      } catch (error) {
+        console.error('Unable to find survey response:', {
+          code: error.code,
+          message: error.message,
+          stack: error.stack
+        });
+        throw error;
       }
 
       // Process the input
       const responseLength = surveyResponse.responses.length;
-      const currentQuestion = survey[responseLength];
+      const currentQuestion = surveyResponse.survey[responseLength];
       console.log("# of responses", responseLength);
       console.log("input", input);
 
       // If no input, re-ask the current question
       function reask() {
         console.log("attempting callback");
+        console.log("surveyResponse", surveyResponse);
         cb.call(surveyResponse, null, surveyResponse, responseLength);
       }
       if (input === undefined) {
@@ -71,33 +85,18 @@ const SurveyResponse = {
       surveyResponse.responses.push(questionResponse);
 
       // Check if survey is complete
-      if (surveyResponse.responses.length === survey.length) {
+      if (surveyResponse.responses.length === surveyResponse.survey.length) {
         surveyResponse.complete = true;
       }
 
-      // Save to Firebase
-      if (!Array.isArray(survey) || survey.length === 0) {
-        throw new Error('Invalid survey data');
-      }
-      
+      // Save to Firebase      
       try {
-        if (surveyResponse.intialized) {
-          const docRef = doc(db, 'surveyResponses', surveyResponse.id);
-          await updateDoc(docRef, surveyResponse);
-          console.log('Updated existing document:', {
-            docId: docRef.id,
-            surveyResponseId: surveyResponse.id
-          });
-        } else {
-          console.log("creating new response doc")
-          surveyResponse.intialized = true;
-          const docRef = doc(surveyCollection, surveyResponse.id);
-          await setDoc(docRef, surveyResponse);
-          console.log('Created new document:', {
-            docId: docRef.id,
-            surveyResponseId: surveyResponse.id
-          });
-        }
+        const docRef = doc(db, 'surveyResponses', surveyResponse.id);
+        await updateDoc(docRef, surveyResponse);
+        console.log('Updated existing document:', {
+          docId: docRef.id,
+          surveyResponseId: surveyResponse.id
+        });
         
         // Only call the callback after Firestore update is complete
         cb.call(surveyResponse, null, surveyResponse, responseLength+1);
@@ -118,11 +117,6 @@ const SurveyResponse = {
 
   async updateTranscription({ responseId, questionIndex, transcript }) {
     try {
-      console.log('Starting updateTranscription with:', {
-        responseId,
-        questionIndex,
-        transcript
-      });
       const surveyCollection = collection(db, 'surveyResponses');
 
       // First try direct document reference
@@ -150,13 +144,13 @@ const SurveyResponse = {
         where('id', '==', responseId),
         limit(1)
       );
-      const querySnapshot = await getDocs(q);
+      const docSnapshot = await getDocs(q);
       
-      if (querySnapshot.empty) {
+      if (docSnapshot.empty) {
         console.error('Document not found with ID:', responseId);
         throw new Error('Survey response not found');
       }
-      const document = querySnapshot.docs[0];
+      const document = docSnapshot.docs[0];
       console.log('Found document through query:', document.id);
       let surveyResponse = { id: document.id, ...document.data() };
       surveyResponse.responses[questionIndex].transcription = transcript;

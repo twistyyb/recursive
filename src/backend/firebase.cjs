@@ -37,7 +37,8 @@ try {
         setDoc,
         doc,
         updateDoc,
-        getDoc
+        getDoc,
+        app
     };
 } catch (error) {
     console.error('Firebase initialization error:', error);

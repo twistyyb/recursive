@@ -1,13 +1,11 @@
-import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
+
+import { SurveyConfig } from './components/surveyConfig'
+import { ResponseDisplay } from './components/ResponseDisplay'
 import './App.css'
-//import Login from './components/Login'
-import { createCall } from './backend/server.cjs'
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
     <>
       <div>
@@ -18,29 +16,14 @@ function App() {
           <img src={reactLogo} className="logo react" alt="React logo" />
         </a>
       </div>
-      {/*<Login />*/}
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <div className="card">
-        <button onClick={() => createCall()}>
-          Create Call
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-
-        </p>
-      </div>
+      <h1>AI Interview System</h1>
       <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
+        A 72 hour hackathon project by Bryan Huang
       </p>
+      
+      <SurveyConfig />
+      <ResponseDisplay />
+      
     </>
   )
 }

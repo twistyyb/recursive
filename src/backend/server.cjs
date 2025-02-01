@@ -2,6 +2,8 @@ require('dotenv').config();
 // Download the helper library from https://www.twilio.com/docs/node/install
 const twilio = require("twilio"); // Or, for ESM: import twilio from "twilio";
 const {db, doc, updateDoc} = require("./firebase.cjs");
+const cors = require('cors');
+const { collection, getDocs } = require('firebase/firestore');
 
 // Find your Account SID and Auth Token at twilio.com/console
 // and set the environment variables. See http://twil.io/secure
@@ -14,31 +16,31 @@ const express = require('express');
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cors({
+  origin: 'http://localhost:5173', // Your frontend URL
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 // Debug middleware to log all requests
 app.use((req, res, next) => {
-  console.log('Incoming request:', {
-    method: req.method,
-    path: req.path,
-  });
+  console.log(req.method, req.path);
   next();
 });
 
 
 const VoiceResponse = require('twilio').twiml.VoiceResponse;
-const SurveyResponse = require('../components/SurveyResponse.cjs');
-
-
-const phone = "+17473347145";
-const survey = require('../assets/survey_data.cjs').survey;
-
+const SurveyResponse = require('./SurveyResponse.cjs');
 
 // Returns TwiML which prompts the caller to record a message
 app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
   var input = req.body.RecordingUrl;
+  
+  // Get responseId from either query params (first request) or request body (subsequent requests)
+  const responseId = req.query.responseId || req.body.responseId;
+  console.log('Voice endpoint - responseId:', responseId);
 
-  console.log("input", input);
   //helper functions 
   function say(text){
     twiml.say({voice: 'alice'}, text);
@@ -48,18 +50,17 @@ app.post('/voice', async (req, res) => {
     res.send(twiml.toString());
   }
 
-  // Call the advanceSurvey function
+  // Call the advanceSurvey function with the responseId
   SurveyResponse.advanceSurvey({
-    phone: phone,
+    responseId: responseId,
     input: input,
-    survey: survey
   }, function(err, surveyResponse, questionIndex) {
-    const nextQuestion = survey[questionIndex];
-    
     if (err || !surveyResponse) {
-      console.log("error in advanceSurvey");
+      console.log("error in advanceSurvey:", err);
       return respond();
     }
+
+    const nextQuestion = surveyResponse.survey[questionIndex];
 
     if (!nextQuestion) {
       console.log("Survey complete.");
@@ -77,20 +78,16 @@ app.post('/voice', async (req, res) => {
     
     // Record the response
     twiml.record({
-      action: '/voice',
+      action: `/voice?responseId=${responseId}`,
       maxLength: 30,
       minLength: 3,
       transcribe: true,
-      transcribeCallback: '/transcription/' + surveyResponse.id + '/' + questionIndex,
+      transcribeCallback: '/transcription/' + responseId + '/' + questionIndex,
       timeout: 3,
       playBeep: false,
 
     });
-
-
-
     respond();
-    
   });
 });
 
@@ -101,36 +98,143 @@ app.post('/transcription/:responseId/:questionIndex', (request, response) => {
   var questionIndex = request.params.questionIndex;
   var transcript = request.body.TranscriptionText;
 
-  console.log("Transcription callback received:", {
-    responseId,
-    questionIndex,
-    transcript,
-    rawParams: request.params
-  });
-  
   SurveyResponse.updateTranscription({responseId, questionIndex, transcript});
 });
-
-
-
-
 
 
 // Create an HTTP server and listen for requests on port 3000
 app.listen(3000);
 console.log("Server is running on port 3000");
 
-//creates an outgoing call to bryan's number at the moment
-async function createCall(phone) {
-  const call = await client.calls.create({
-    from: "+18445417040",
-    to: phone,
-    url: process.env.SERVER_URL + "/voice",
-  });
 
-  console.log(call.sid);
-}
+// Store call statuses in memory (consider using a database for production)
+const callStatuses = new Map();
 
-module.exports = { createCall };
+// Create call endpoint
+app.post('/api/create-call', async (req, res) => {
+  try {
+    const phone = req.body.phone;
+    const surveyData = req.body.survey;
+    console.log('Creating call to:', {
+      phone: phone,
+      questions: surveyData
+    });
 
-//createCall();
+    // First create the survey response
+    const responseId = "survey" + new Date().toISOString();
+    
+    await SurveyResponse.createSurveyResponse({
+      responseId: responseId,
+      phone: phone,
+      survey: surveyData
+    });
+    console.log("Survey response created with ID:", responseId);
+
+    // Create the call with the responseId as a parameter
+    const call = await client.calls.create({
+      from: "+18445417040",
+      to: phone,
+      url: `${process.env.SERVER_URL}/voice?responseId=${responseId}`,
+      statusCallback: process.env.SERVER_URL + "/api/status-callback",
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'failed', 'busy', 'no-answer'],
+      statusCallbackMethod: 'POST'
+    });
+
+    // Set initial status
+    callStatuses.set(call.sid, 'initiated');
+    console.log(`Initial call status set for ${call.sid}: initiated`);
+
+    // Verify Twilio connection
+    console.log('Call SID:', call.sid);
+    console.log('Initial call status:', call.status);
+    console.log('Callback URL:', process.env.SERVER_URL + "/api/status-callback");
+
+    res.json({ success: true, callSid: call.sid });
+  } catch (error) {
+    console.error('Error creating call:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Failed to create call',
+      details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+    });
+  }
+});
+
+
+// Handle Status updates
+// Handle Twilio's POST callbacks
+app.post('/api/status-callback', (req, res) => {
+  try {
+    const { CallSid, CallStatus } = req.body;
+    
+    if (!CallSid || !CallStatus) {
+      console.error('Missing required fields in Twilio callback:', req.body);
+      return res.status(400).json({ error: 'CallSid and CallStatus are required' });
+    }
+    
+    // Store the status
+    callStatuses.set(CallSid, CallStatus);
+    console.log(`Call ${CallSid} status updated to: ${CallStatus}`);
+    
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Error in status-callback POST:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Handle frontend GET requests
+app.get('/api/status-callback', (req, res) => {
+  try {
+    const { callSid } = req.query;
+    
+    if (!callSid) {
+      console.error('Missing callSid in GET request');
+      return res.status(400).json({ error: 'CallSid is required' });
+    }
+
+    const status = callStatuses.get(callSid);
+    
+    if (!status) {
+      console.log(`No status found for callSid: ${callSid}`);
+      return res.status(404).json({ error: 'Call status not found' });
+    }
+
+    res.json({ status });
+  } catch (error) {
+    console.error('Error in status-callback GET:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update the survey responses endpoint
+app.get('/api/survey-responses', async (req, res) => {
+  try {
+    console.log('Fetching survey responses...');
+    const surveyCollection = collection(db, 'surveyResponses');
+    const snapshot = await getDocs(surveyCollection);
+    
+    if (!snapshot) {
+      console.log('No snapshot returned');
+      return res.json([]);
+    }
+
+    const responses = [];
+    snapshot.forEach((doc) => {
+      responses.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    
+    console.log('Responses fetched:', responses);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(responses);
+  } catch (error) {
+    console.error('Error fetching survey responses:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch survey responses',
+      details: error.message 
+    });
+  }
+});
