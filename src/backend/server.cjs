@@ -1,7 +1,7 @@
 require('dotenv').config();
 // Download the helper library from https://www.twilio.com/docs/node/install
 const twilio = require("twilio"); // Or, for ESM: import twilio from "twilio";
-const {db, doc, updateDoc} = require("./firebase.cjs");
+const {db, doc, updateDoc, deleteDoc} = require("./firebase.cjs");
 const cors = require('cors');
 const { collection, getDocs } = require('firebase/firestore');
 
@@ -70,8 +70,9 @@ app.post('/voice', async (req, res) => {
     }
 
     if (questionIndex === 0){
-      say('Survey start.');
+      say('Welcome to AI Interview System. Please listen carefully to the following questions and respond accordingly.');
     }
+
 
     console.log("question: ", nextQuestion);
     say(nextQuestion);
@@ -121,8 +122,11 @@ app.post('/api/create-call', async (req, res) => {
     });
 
     // First create the survey response
-    const responseId = "survey" + new Date().toISOString();
+    const dateTime = new Date().toISOString();
+    const responseId = "survey" + dateTime;
     
+
+
     await SurveyResponse.createSurveyResponse({
       responseId: responseId,
       phone: phone,
@@ -142,13 +146,8 @@ app.post('/api/create-call', async (req, res) => {
 
     // Set initial status
     callStatuses.set(call.sid, 'initiated');
-    console.log(`Initial call status set for ${call.sid}: initiated`);
 
     // Verify Twilio connection
-    console.log('Call SID:', call.sid);
-    console.log('Initial call status:', call.status);
-    console.log('Callback URL:', process.env.SERVER_URL + "/api/status-callback");
-
     res.json({ success: true, callSid: call.sid });
   } catch (error) {
     console.error('Error creating call:', error);
@@ -234,6 +233,33 @@ app.get('/api/survey-responses', async (req, res) => {
     console.error('Error fetching survey responses:', error);
     res.status(500).json({ 
       error: 'Failed to fetch survey responses',
+      details: error.message 
+    });
+  }
+});
+
+// Add new DELETE endpoint
+app.delete('/api/delete-response', async (req, res) => {
+  try {
+    const { responseId } = req.body;
+    
+    if (!responseId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'ResponseId is required' 
+      });
+    }
+
+    const docRef = doc(db, 'surveyResponses', responseId);
+    await deleteDoc(docRef);
+
+    console.log(`Successfully deleted response: ${responseId}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting survey response:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to delete survey response',
       details: error.message 
     });
   }

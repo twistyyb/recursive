@@ -1,9 +1,10 @@
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
+import './App.css'
+import './index.css'
 
 import { SurveyConfig } from './components/surveyConfig'
 import { ResponseDisplay } from './components/ResponseDisplay'
-import './App.css'
 
 function App() {
   return (
