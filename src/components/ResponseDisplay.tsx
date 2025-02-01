@@ -17,26 +17,30 @@ interface SurveyResponseData {
 
 const Container = styled.div`
   margin-top: 16px;
-  padding: 12px;
-  border: 2px solid #e5e7eb;
-  border-radius: 4px;
+  padding: 16px;
+  border: 4px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 `;
 
 const Header = styled.div`
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+  position: relative;
 `;
 
 const Title = styled.h2`
-  font-size: 20px;
+  font-size: 24px;
   font-weight: bold;
+  text-align: center;
 `;
 
 const RefreshButton = styled.button`
-  padding: 4px 12px;
-  font-size: 14px;
+  position: absolute;
+  right: 0;
+  padding: 8px 16px;
   background-color: #3b82f6;
   color: white;
   border-radius: 4px;
@@ -62,11 +66,15 @@ const ResponseHeader = styled.div`
   align-items: center;
   font-size: 14px;
   margin-bottom: 8px;
+  min-width: 0;
+  gap: 16px;
 `;
 
 const LeftHeaderSection = styled.div`
   display: flex;
   align-items: center;
+  gap: 16px;
+  flex: 1;
 `;
 
 const PhoneText = styled.span`
@@ -80,11 +88,12 @@ const DateText = styled.span`
 `;
 
 const StatusText = styled.span<{ $complete: boolean }>`
-  padding: 2px 6px;
+  padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
   background-color: ${props => props.$complete ? '#10B981' : '#F59E0B'};
   color: white;
+  margin-left: auto;
 `;
 
 const ResponseItem = styled.div`
@@ -110,7 +119,8 @@ const DeleteText = styled.span`
   text-decoration: underline;
   cursor: pointer;
   font-size: 12px;
-  margin-left: 8px;
+  margin-left: 16px;
+  padding-right: 16px;
 
   &:hover {
     color: #DC2626;
@@ -132,7 +142,10 @@ export function ResponseDisplay() {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
-        setResponses(Array.isArray(data) ? data : []);
+        const sortedResponses = Array.isArray(data) 
+          ? data.sort((a, b) => b.responseId.localeCompare(a.responseId))
+          : [];
+        setResponses(sortedResponses);
         setError(null);
       } catch (error) {
         console.error('Error fetching responses:', error);
@@ -201,14 +214,14 @@ export function ResponseDisplay() {
               <ResponseHeader>
                 <LeftHeaderSection>
                   <PhoneText>Survey outbound to {response.phone}</PhoneText>
+                  <StatusText $complete={response.complete}>
+                    {response.complete ? 'complete' : 'in progress'}
+                  </StatusText>
                   <DateText>{formatDateTime(response.responseId)}</DateText>
                   <DeleteText onClick={() => deleteResponse(response.responseId)}>
                     delete
                   </DeleteText>
                 </LeftHeaderSection>
-                <StatusText $complete={response.complete}>
-                  {response.complete ? 'complete' : 'in progress'}
-                </StatusText>
               </ResponseHeader>
               
               <div>

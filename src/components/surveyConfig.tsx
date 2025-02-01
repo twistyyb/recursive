@@ -1,5 +1,152 @@
 import { useEffect, useState } from 'react'
 import { phone, PhoneResult } from 'phone'
+import styled from 'styled-components'
+
+// Add styled components definitions
+const Container = styled.div`
+  padding: 1rem;
+  border: 4px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+`
+
+const Title = styled.h1`
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+`
+
+const Form = styled.form`
+  margin-bottom: 1.5rem;
+`
+
+const InputGroup = styled.div`
+  display: flex;
+  gap: 0.5rem;
+`
+
+const Input = styled.input`
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+`
+
+const Button = styled.button`
+  background-color: #3b82f6;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  border: none;
+  cursor: pointer;
+
+  &:hover {
+    background-color: #2563eb;
+  }
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+`
+
+const QuestionsList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+`
+
+const QuestionItem = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+`
+
+const QuestionContent = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+`
+
+const QuestionNumber = styled.span`
+  font-weight: bold;
+  min-width: 2rem;
+  text-align: right;
+  font-size: 1.125rem;
+`
+
+const QuestionText = styled.span`
+  font-size: 1.125rem;
+`
+
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: 0.25rem;
+  margin-left: 1rem;
+`
+
+const IconButton = styled.button<{ $isDisabled?: boolean }>`
+  padding: 4px 8px;
+  color: ${props => props.$isDisabled ? '#9ca3af' : '#3b82f6'};
+  cursor: ${props => props.$isDisabled ? 'not-allowed' : 'pointer'};
+
+  &:hover {
+    color: ${props => props.$isDisabled ? '#9ca3af' : '#2563eb'};
+  }
+`
+
+const DeleteButton = styled.button`
+  color: #ef4444;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+
+  &:hover {
+    color: #dc2626;
+  }
+`
+
+const PhoneInput = styled(Input)<{ $isValid?: boolean }>`
+  margin-right: 16px;
+  border-color: ${props => props.$isValid ? '#4CAF50' : '#ccc'};
+  height: 38px;
+  box-sizing: border-box;
+  padding: 8px 16px;
+  width: calc(33.33% - 16px);
+`
+
+const CallButton = styled(Button)`
+  width: 66.66%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 8px 16px;
+  min-width: 200px;
+  max-width: 66.66%;
+`
+
+const ErrorMessage = styled.p`
+  color: #ff4444;
+  font-size: 0.8em;
+  margin-top: 0.5rem;
+`
+
+const StatusMessage = styled.p<{ $isError?: boolean }>`
+  margin-top: 16px;
+  color: ${props => props.$isError ? '#ff4444' : '#4CAF50'};
+`
+
+const PhoneInputGroup = styled.div`
+  display: flex;
+  align-items: center;
+  margin-top: 16px;
+  width: 100%;
+`
 
 export function SurveyConfig() {
   const [callStatus, setCallStatus] = useState<string>('')
@@ -140,100 +287,82 @@ export function SurveyConfig() {
 
 
   return (
-    <div className="p-4 border-4 border-gray-300 rounded-lg shadow-md">
-      <h1 className="text-2xl font-bold mb-4">Survey Configuration</h1>
+    <Container>
+      <Title>Survey Configuration</Title>
       
-      {/* Question input form */}
-      <form onSubmit={handleAddQuestion} className="mb-6">
-        <div className="flex gap-2">
-          <input
+      <Form onSubmit={handleAddQuestion}>
+        <InputGroup>
+          <Input
             type="text"
             value={newQuestion}
             onChange={(e) => setNewQuestion(e.target.value)}
             placeholder="Enter a survey question..."
-            className="flex-1 p-2 border rounded"
           />
-          <button 
-            type="submit"
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-          >
+          <Button type="submit">
             Add Question
-          </button>
-        </div>
-      </form>
+          </Button>
+        </InputGroup>
+      </Form>
 
-      {/* Questions list */}
-      <div className="space-y-2">
+      <QuestionsList>
         {questions.map((question, index) => (
-          <div key={index} className="flex items-center justify-between gap-2 p-3 border border-gray-300 rounded-md shadow-sm">
-            <div className="flex items-center gap-2 flex-1">
-              <span className="font-bold min-w-[2rem] text-lg text-right">{index + 1}.</span>
-              <span className="text-lg">{question}</span>
-            </div>
-            <div className="flex gap-1 ml-4">
-              <button
+          <QuestionItem key={index}>
+            <QuestionContent>
+              <QuestionNumber>{index + 1}.</QuestionNumber>
+              <QuestionText>{question}</QuestionText>
+            </QuestionContent>
+            <ButtonGroup>
+              <IconButton
                 onClick={() => handleMoveQuestion(index, 'up')}
+                $isDisabled={index === 0}
                 disabled={index === 0}
-                className={`px-2 py-1 ${index === 0 ? 'text-gray-400' : 'text-blue-500 hover:text-blue-700'}`}
               >
                 ↑
-              </button>
-              <button
+              </IconButton>
+              <IconButton
                 onClick={() => handleMoveQuestion(index, 'down')}
+                $isDisabled={index === questions.length - 1}
                 disabled={index === questions.length - 1}
-                className={`px-2 py-1 ${index === questions.length - 1 ? 'text-gray-400' : 'text-blue-500 hover:text-blue-700'}`}
               >
                 ↓
-              </button>
-              <button
-                onClick={() => handleRemoveQuestion(index)}
-                className="text-red-500 hover:text-red-700 text-sm px-2 py-1"
-              >
+              </IconButton>
+              <DeleteButton onClick={() => handleRemoveQuestion(index)}>
                 ✕
-              </button>
-            </div>
-          </div>
+              </DeleteButton>
+            </ButtonGroup>
+          </QuestionItem>
         ))}
-      </div>
+      </QuestionsList>
 
-      {/* Phone number input and start interview button */}
-      <div className="card">
-        <input
+      <PhoneInputGroup>
+        <PhoneInput
           type="tel"
           value={phoneNumber}
           onChange={handlePhoneChange}
           placeholder="Enter phone number (e.g. +1234567890)"
-          style={{
-            padding: '0.5rem',
-            marginRight: '1rem',
-            borderRadius: '4px',
-            border: `1px solid ${validatedPhone?.isValid ? '#4CAF50' : '#ccc'}`
-          }}
+          $isValid={validatedPhone?.isValid}
         />
-        <button
+        <CallButton
           onClick={() => validatedPhone?.isValid ? handleCreateCall(validatedPhone.phoneNumber) : undefined}
           disabled={isLoading || !validatedPhone?.isValid}
-          style={{ opacity: (isLoading || !validatedPhone?.isValid) ? 0.7 : 1 }}
         >
-          {isLoading ? 'Creating Call...' : `Start Interview Call ${validatedPhone?.phoneNumber || ''}`}
-        </button>
-        {!validatedPhone?.isValid && phoneNumber && (
-          <p style={{ color: '#ff4444', fontSize: '0.8em', marginTop: '0.5rem' }}>
-            Please enter a valid phone number with country code (e.g. +1234567890)
-          </p>
-        )}
-        {callStatus && (
-          <p className="status-message" style={{
-            marginTop: '1rem',
-            color: callStatus.includes('Error') ? '#ff4444' : '#4CAF50'
-          }}>
-            {callStatus}
-          </p>
-        )}
-      </div>
+          {isLoading ? 'Creating Call...' : `Start Interview Call`}
+        </CallButton>
+      </PhoneInputGroup>
+        
 
-      
-    </div>
+      {!validatedPhone?.isValid && phoneNumber && (
+        <ErrorMessage>
+          Please enter a valid phone number with country code (e.g. +1234567890)
+        </ErrorMessage>
+      )}
+      {callStatus && (
+        <StatusMessage $isError={callStatus.includes('Error')}>
+          {callStatus}
+        </StatusMessage>
+      )}
+
+    </Container>
   );
 }
 
