@@ -1,6 +1,6 @@
 // Import the functions you need from the SDKs you need
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, query, where, limit, getDocs, addDoc, doc, updateDoc } = require('firebase/firestore');
+const { getFirestore, collection, query, where, limit, getDocs, addDoc, setDoc, getDoc, doc, updateDoc } = require('firebase/firestore');
 const { getAuth } = require('firebase/auth');
 require('dotenv').config();  // Add this if not already present
 // TODO: Add SDKs for Firebase products that you want to use
@@ -34,8 +34,10 @@ try {
         limit,
         getDocs,
         addDoc,
+        setDoc,
         doc,
-        updateDoc
+        updateDoc,
+        getDoc
     };
 } catch (error) {
     console.error('Firebase initialization error:', error);

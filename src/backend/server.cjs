@@ -1,6 +1,7 @@
 require('dotenv').config();
 // Download the helper library from https://www.twilio.com/docs/node/install
 const twilio = require("twilio"); // Or, for ESM: import twilio from "twilio";
+const {db, doc, updateDoc} = require("./firebase.cjs");
 
 // Find your Account SID and Auth Token at twilio.com/console
 // and set the environment variables. See http://twil.io/secure
@@ -16,13 +17,11 @@ app.use(express.urlencoded({ extended: true }));
 
 // Debug middleware to log all requests
 app.use((req, res, next) => {
-    console.log('Incoming request:', {
-        method: req.method,
-        path: req.path,
-        body: req.body,
-        headers: req.headers
-    });
-    next();
+  console.log('Incoming request:', {
+    method: req.method,
+    path: req.path,
+  });
+  next();
 });
 
 
@@ -34,61 +33,65 @@ const phone = "+17473347145";
 const survey = require('../assets/survey_data.cjs').survey;
 
 
-
-
 // Returns TwiML which prompts the caller to record a message
 app.post('/voice', async (req, res) => {
-    const twiml = new VoiceResponse();
-    var input = req.body.RecordingUrl || req.body.Digits;
+  const twiml = new VoiceResponse();
+  var input = req.body.RecordingUrl;
 
-    console.log("input", input);
-    function say(text){
-      twiml.say({voice: 'alice'}, text);
-    }
-    function respond() {
-      res.type('text/xml');
-      res.send(twiml.toString());
-    }
+  console.log("input", input);
+  //helper functions 
+  function say(text){
+    twiml.say({voice: 'alice'}, text);
+  }
+  function respond() {
+    res.type('text/xml');
+    res.send(twiml.toString());
+  }
+
+  // Call the advanceSurvey function
+  SurveyResponse.advanceSurvey({
+    phone: phone,
+    input: input,
+    survey: survey
+  }, function(err, surveyResponse, questionIndex) {
+    const nextQuestion = survey[questionIndex];
     
-    try {
-        // Call the advanceSurvey function
-        const result = await SurveyResponse.advanceSurvey({
-            phone: phone,
-            input: input,
-            survey: survey
-        });
-
-        const { surveyResponse, nextQuestionIndex } = result;
-        
-        // Handle the response
-        if (nextQuestionIndex < survey.length) {
-          const nextQuestion = survey[nextQuestionIndex];
-          say(nextQuestion.text);
-          
-            // Record the response
-            twiml.record({
-                action: '/voice',
-                maxLength: 30,
-                minLength: 3,
-                transcribe: true,
-                transcribeCallback: '/transcription/' + surveyResponse.id + '/' + nextQuestionIndex,
-                timeout: 3,
-                trim: 'do-not-trim'
-            });
-          
-        } else {
-            say('Thank you for completing the survey!');
-            if (surveyResponse.id) {
-              await updateDoc(doc(db, 'surveyResponses', surveyResponse.id), { complete: true });
-            }
-            return respond();
-        }
-
-    } catch (error) {
-        console.error('Error in voice endpoint:', error);
-        say('An error occurred. Please try again later.');
+    if (err || !surveyResponse) {
+      console.log("error in advanceSurvey");
+      return respond();
     }
+
+    if (!nextQuestion) {
+      console.log("Survey complete.");
+      say('Survey complete.');
+      twiml.hangup();
+      return respond();
+    }
+
+    if (questionIndex === 0){
+      say('Survey start.');
+    }
+
+    console.log("question: ", nextQuestion);
+    say(nextQuestion);
+    
+    // Record the response
+    twiml.record({
+      action: '/voice',
+      maxLength: 30,
+      minLength: 3,
+      transcribe: true,
+      transcribeCallback: '/transcription/' + surveyResponse.id + '/' + questionIndex,
+      timeout: 3,
+      playBeep: false,
+
+    });
+
+
+
     respond();
+    
+  });
 });
 
 // Trasncription callback - called by Twilio with transcription of recording
@@ -98,18 +101,14 @@ app.post('/transcription/:responseId/:questionIndex', (request, response) => {
   var questionIndex = request.params.questionIndex;
   var transcript = request.body.TranscriptionText;
 
-  SurveyResponse.findById(responseId, function(err, surveyResponse) {
-      if (err || !surveyResponse || !surveyResponse.responses[questionIndex]) {
-          console.log("Error could not find survey response");
-          return response.status(500).end();
-      }
-      // Update appropriate answer field
-      surveyResponse.responses[questionIndex].answer = transcript;
-      surveyResponse.markModified('responses');
-      surveyResponse.save(function(err, doc) {
-          return response.status(err ? 500 : 200).end();
-      });
+  console.log("Transcription callback received:", {
+    responseId,
+    questionIndex,
+    transcript,
+    rawParams: request.params
   });
+  
+  SurveyResponse.updateTranscription({responseId, questionIndex, transcript});
 });
 
 
@@ -119,17 +118,19 @@ app.post('/transcription/:responseId/:questionIndex', (request, response) => {
 
 // Create an HTTP server and listen for requests on port 3000
 app.listen(3000);
+console.log("Server is running on port 3000");
 
 //creates an outgoing call to bryan's number at the moment
-async function createCall() {
+async function createCall(phone) {
   const call = await client.calls.create({
     from: "+18445417040",
-    to: "+17473347145",
-    url: "https://9427-2607-f140-400-ac-d97a-275a-5cfb-74df.ngrok-free.app/voice",
+    to: phone,
+    url: process.env.SERVER_URL + "/voice",
   });
 
   console.log(call.sid);
 }
 
-createCall();
-//console.log(survey.survey.length);
+module.exports = { createCall };
+
+//createCall();

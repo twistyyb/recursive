@@ -38,7 +38,7 @@ async function createCall() {
   const call = await client.calls.create({
     from: "+18445417040",
     to: "+17473347145",
-    url: "https://9427-2607-f140-400-ac-d97a-275a-5cfb-74df.ngrok-free.app/voice",
+    url: process.env.SERVER_URL + "/voice",
   });
 
   console.log(call.sid);

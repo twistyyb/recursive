@@ -2,7 +2,8 @@ import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
-import Login from './components/Login'
+//import Login from './components/Login'
+import { createCall } from './backend/server.cjs'
 
 function App() {
   const [count, setCount] = useState(0)
@@ -17,14 +18,24 @@ function App() {
           <img src={reactLogo} className="logo react" alt="React logo" />
         </a>
       </div>
-      <Login />
+      {/*<Login />*/}
       <h1>Vite + React</h1>
       <div className="card">
         <button onClick={() => setCount((count) => count + 1)}>
+
           count is {count}
         </button>
         <p>
           Edit <code>src/App.tsx</code> and save to test HMR
+        </p>
+      </div>
+      <div className="card">
+        <button onClick={() => createCall()}>
+          Create Call
+        </button>
+        <p>
+          Edit <code>src/App.tsx</code> and save to test HMR
+
         </p>
       </div>
       <p className="read-the-docs">
