@@ -180,13 +180,14 @@ export function AiConfig() {
       console.log('Making POST request to create call:', {
         phone: number,
         companyName: 'Cafe Strada',
-        endpoint: `${import.meta.env.VITE_API_URL}/initiate-call`
+        endpoint: `${import.meta.env.VITE_API_URL}/api/initiate-call`
       });
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/initiate-call`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/initiate-call`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+
 
         },
         body: JSON.stringify({
@@ -224,7 +225,7 @@ export function AiConfig() {
     if (isCallActive && callSid) {
       const checkCallStatus = async () => {
         try {
-          const response = await fetch(`${import.meta.env.VITE_API_URL}/status-callback?callSid=${callSid}`, {
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/status-callback?callSid=${callSid}`, {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',
