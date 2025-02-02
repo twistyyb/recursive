@@ -271,14 +271,15 @@ export function AiConfig() {
   }, [isCallActive, callSid]);
 
   useEffect(() => {
-    if (!import.meta.env.VITE_PUSHER_KEY) {
-      console.error('Pusher configuration missing');
+    if (!import.meta.env.VITE_PUSHER_KEY || !import.meta.env.VITE_PUSHER_CLUSTER) {
+      console.error('Pusher configuration missing (key or cluster)');
       return;
     }
 
     const pusher = new Pusher(import.meta.env.VITE_PUSHER_KEY, {
       cluster: import.meta.env.VITE_PUSHER_CLUSTER,
-      forceTLS: true
+      forceTLS: true,
+      enabledTransports: ['ws', 'wss']
     });
 
     // Subscribe only when needed

@@ -8,14 +8,32 @@ import { WebSocket } from 'ws';
 
 dotenv.config();
 
+// Add after dotenv.config()
+const debugLog = (message, data = null) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${message}`);
+  if (data) console.log(JSON.stringify(data, null, 2));
+};
+
 // Initialize Pusher
 const pusher = new Pusher({
   appId: process.env.PUSHER_APP_ID,
   key: process.env.PUSHER_KEY,
   secret: process.env.PUSHER_SECRET,
   cluster: process.env.PUSHER_CLUSTER,
-  useTLS: true
+  useTLS: true,
+  host: `api-${process.env.PUSHER_CLUSTER}.pusher.com`
 });
+
+// Update Pusher initialization
+if (!process.env.PUSHER_CLUSTER || !process.env.PUSHER_APP_ID || !process.env.PUSHER_KEY) {
+  debugLog('Missing Pusher configuration:', {
+    cluster: !!process.env.PUSHER_CLUSTER,
+    appId: !!process.env.PUSHER_APP_ID,
+    key: !!process.env.PUSHER_KEY
+  });
+  process.exit(1);
+}
 
 const fastify = Fastify();
 fastify.register(fastifyFormBody);
@@ -37,6 +55,8 @@ const openAIConnections = new Map();
 
 // Handle OpenAI WebSocket connection
 const connectToOpenAI = async (callId, instruction) => {
+  debugLog(`Connecting to OpenAI for call ${callId}`);
+  
   const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
     headers: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -44,22 +64,35 @@ const connectToOpenAI = async (callId, instruction) => {
     }
   });
 
-  openAiWs.on('open', () => {
-    const sessionUpdate = {
-      type: 'session.update',
-      session: {
-        turn_detection: { type: 'server_vad' },
-        input_audio_format: 'g711_ulaw',
-        output_audio_format: 'g711_ulaw',
-        voice: 'alloy',
-        instructions: instruction,
-        modalities: ["text", "audio"],
-        temperature: 0.8,
-        input_audio_transcription: { 'model': 'whisper-1' },
-      }
-    };
-    openAiWs.send(JSON.stringify(sessionUpdate));
+  openAiWs.on('error', (error) => {
+    debugLog(`OpenAI WebSocket error for call ${callId}:`, {
+      error: error.message,
+      stack: error.stack
+    });
   });
+
+  openAiWs.on('open', () => {
+    debugLog(`OpenAI WebSocket connected for call ${callId}`);
+  });
+
+  openAiWs.on('close', () => {
+    debugLog(`OpenAI WebSocket closed for call ${callId}`);
+  });
+
+  // Update Pusher trigger with error handling
+  const safePusherTrigger = async (channel, event, data) => {
+    try {
+      await pusher.trigger(channel, event, data);
+      debugLog(`Pusher event sent: ${event}`, { channel, data });
+    } catch (error) {
+      debugLog(`Pusher trigger error for ${event}:`, {
+        error: error.message,
+        channel,
+        data
+      });
+      throw error;
+    }
+  };
 
   openAiWs.on('message', (data) => {
     try {
@@ -90,6 +123,8 @@ const connectToOpenAI = async (callId, instruction) => {
 // Modified initiate-call endpoint
 fastify.post('/api/initiate-call', async (request, reply) => {
   try {
+    debugLog('Received call initiation request:', request.body);
+    
     const { companyName, phoneNumber, jobTitle, targetSkillsQualities, additionalInstructions } = request.body;
     const callId = new Date().toISOString();
 
@@ -106,19 +141,30 @@ fastify.post('/api/initiate-call', async (request, reply) => {
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioClient = twilio(accountSid, authToken);
 
-    const call = await twilioClient.calls.create({
-      to: phoneNumber,
-      from: "+18445417040",
-      url: `${process.env.SERVER_URL}/api/incoming-call?callId=${callId}`,
-      record: true,
-      statusCallback: process.env.SERVER_URL + "/api/status-callback",
-      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'failed', 'busy', 'no-answer'],
-      statusCallbackMethod: 'POST'
-    });
+    // Create Twilio call with enhanced error handling
+    try {
+      const call = await twilioClient.calls.create({
+        to: phoneNumber,
+        from: "+18445417040",
+        url: `${process.env.SERVER_URL}/api/incoming-call?callId=${callId}`,
+        record: true,
+        statusCallback: process.env.SERVER_URL + "/api/status-callback",
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'failed', 'busy', 'no-answer'],
+        statusCallbackMethod: 'POST'
+      });
+      debugLog('Twilio call created:', { callSid: call.sid });
+    } catch (twilioError) {
+      debugLog('Twilio call creation failed:', {
+        error: twilioError.message,
+        code: twilioError.code,
+        moreInfo: twilioError.moreInfo
+      });
+      throw twilioError;
+    }
 
     callStatuses.set(call.sid, 'initiated');
 
-    await pusher.trigger('calls', 'call-created', {
+    await safePusherTrigger('calls', 'call-created', {
       callSid: call.sid,
       status: 'initiated',
       timestamp: new Date().toISOString()
@@ -127,11 +173,18 @@ fastify.post('/api/initiate-call', async (request, reply) => {
     reply.send({
       success: true,
       callSid: call.sid,
-      message: 'Call initiated successfully',
+      message: 'Call initiated successfully'
     });
   } catch (error) {
-    console.error('Error initiating call:', error);
-    reply.code(500).send({ error: 'Failed to initiate call', details: error.message });
+    debugLog('Call initiation failed:', {
+      error: error.message,
+      stack: error.stack
+    });
+    reply.code(500).send({ 
+      error: 'Failed to initiate call', 
+      details: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
