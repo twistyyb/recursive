@@ -15,6 +15,7 @@
     "@rollup/rollup-linux-x64-gnu": "4.6.1"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^1.1.9",
     "@fastify/cors": "^10.0.2",
     "@fastify/formbody": "^8.0.2",
     "@fastify/static": "^8.0.4",

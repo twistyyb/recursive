@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import Pusher from 'pusher';
 import twilio from 'twilio';
 import { WebSocket } from 'ws';
-import { OpenAI } from 'openai';
+import { openai } from '@ai-sdk/openai';
 
 dotenv.config();
 
@@ -82,64 +82,6 @@ fastify.register(fastifyCors, {
 
 // Maintain state
 const activeCallInstructions = new Map();
-const openAIConnections = new Map();
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Handle OpenAI WebSocket connection
-const connectToOpenAI = async (callId, instruction) => {
-  debugLog(`Connecting to OpenAI for call ${callId}`);
-  
-  const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      "OpenAI-Beta": "realtime=v1"
-    }
-  });
-
-  openAiWs.on('error', (error) => {
-    debugLog(`OpenAI WebSocket error for call ${callId}:`, {
-      error: error.message,
-      stack: error.stack
-    });
-  });
-
-  openAiWs.on('open', () => {
-    debugLog(`OpenAI WebSocket connected for call ${callId}`);
-  });
-
-  openAiWs.on('close', () => {
-    debugLog(`OpenAI WebSocket closed for call ${callId}`);
-  });
-
-  openAiWs.on('message', (data) => {
-    try {
-      const response = JSON.parse(data);
-      
-      if (response.type === 'response.audio.delta' && response.delta) {
-        // Send audio through Pusher instead of direct WebSocket
-        pusher.trigger(`call-${callId}`, 'audio-chunk', {
-          payload: response.delta
-        });
-      }
-      
-      if (response.type === 'response.audio_transcript.done') {
-        console.log('AI:', response.transcript);
-        pusher.trigger(`call-${callId}`, 'transcript', {
-          speaker: 'AI',
-          text: response.transcript
-        });
-      }
-    } catch (error) {
-      console.error('Error processing OpenAI message:', error);
-    }
-  });
-
-  return openAiWs;
-};
 
 // Modified initiate-call endpoint
 fastify.post('/api/initiate-call', async (request, reply) => {
@@ -210,7 +152,6 @@ fastify.post('/api/initiate-call', async (request, reply) => {
   }
 });
 
-// Modify the incoming-call endpoint to use HTTP
 fastify.all('/api/incoming-call', async (request, reply) => {
   const callId = request.query.callId || request.body.callId;
 
@@ -218,134 +159,181 @@ fastify.all('/api/incoming-call', async (request, reply) => {
     <Response>
       <Say>Connecting you to the interviewer...</Say>
       <Connect>
-        <Stream url="https://${request.headers.host}/api/media-stream/${callId}" mode="bidirectional" />
+        <Stream url="wss://${request.headers.host}/api/media-stream/${callId}" />
       </Connect>
     </Response>`;
 
   reply.type('text/xml').send(twimlResponse);
 });
 
-// Replace WebSocket endpoint with HTTP endpoint
 fastify.post('/api/media-stream/:callId', async (request, reply) => {
   try {
     const { callId } = request.params;
-    const { event, media, start } = request.body;
+    const { event, media, start, parameters } = request.body;
     
-    const instruction = activeCallInstructions.get(callId);
+    // Extract callId from parameters if present
+    const streamCallId = parameters?.callId || callId;
+    console.log('Stream parameters:', parameters);
+    console.log('Using callId:', streamCallId);
     
-    if (event === 'media' && media?.payload) {
-      // Process audio with OpenAI
-      const response = await openai.audio.speech.create({
-        model: "tts-1",
-        voice: "alloy",
-        input: media.payload
-      });
+    // Create data stream for real-time communication
+    const dataStream = createDataStream({
+      execute: async dataStreamWriter => {
+        try {
+          const instruction = activeCallInstructions.get(streamCallId);
+          
+          if (event === 'start') {
+            const streamSid = start.streamSid;
+            console.log('Stream started:', { streamSid, parameters });
+            
+            // Write initial session data
+            dataStreamWriter.writeData({
+              type: 'session.started',
+              streamSid,
+              timestamp: new Date().toISOString()
+            });
 
-      // Send audio response through Pusher
-      await safePusherTrigger(`call-${callId}`, 'audio-response', {
-        payload: response.audioData,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    if (event === 'start') {
-      console.log('Stream started:', start.streamSid);
-      // Initialize conversation if needed
-      await safePusherTrigger(`call-${callId}`, 'stream-started', {
-        streamSid: start.streamSid,
-        timestamp: new Date().toISOString()
-      });
-    }
+            // Initialize OpenAI session
+            const sessionUpdate = {
+              turn_detection: { type: 'server_vad' },
+              input_audio_format: 'g711_ulaw',
+              output_audio_format: 'g711_ulaw',
+              voice: VOICE,
+              instructions: instruction,
+              modalities: ["text", "audio"],
+              temperature: 0.8,
+              input_audio_transcription: {'model': 'whisper-1'},
+            };
 
-    reply.send({ success: true });
+            dataStreamWriter.writeData({
+              type: 'session.update',
+              session: sessionUpdate
+            });
+          }
+          
+          if (event === 'media' && media?.payload) {
+            // Send audio buffer to OpenAI
+            dataStreamWriter.writeData({
+              type: 'input_audio_buffer.append',
+              audio: media.payload
+            });
+
+            // Process response from OpenAI
+            const openaiResponse = await openai.audio.realtime.process({
+              audio: media.payload,
+              model: 'gpt-4o-realtime-preview-2024-10-01',
+              session: instruction
+            });
+
+            // Handle OpenAI response
+            for await (const chunk of openaiResponse) {
+              // Log event types for debugging
+              if (LOG_EVENT_TYPES.includes(chunk.type)) {
+                console.log(`Received event: ${chunk.type}`);
+              }
+
+              switch (chunk.type) {
+                case 'session.updated':
+                  console.log('Session updated successfully');
+                  break;
+
+                case 'response.audio.delta':
+                  if (chunk.delta) {
+                    const audioDelta = {
+                      event: 'media',
+                      streamSid: start.streamSid,
+                      media: { payload: Buffer.from(chunk.delta, 'base64').toString('base64') }
+                    };
+                    dataStreamWriter.writeData(audioDelta);
+                  }
+                  break;
+
+                case 'conversation.item.input_audio_transcription.completed':
+                  console.log('User:', chunk.transcript);
+                  dataStreamWriter.writeData({
+                    type: 'transcription',
+                    speaker: 'User',
+                    text: chunk.transcript
+                  });
+                  break;
+
+                case 'response.audio_transcript.done':
+                  console.log('AI:', chunk.transcript);
+                  dataStreamWriter.writeData({
+                    type: 'transcription',
+                    speaker: 'AI',
+                    text: chunk.transcript
+                  });
+                  break;
+
+                case 'input_audio_buffer.committed':
+                case 'input_audio_buffer.speech_started':
+                case 'input_audio_buffer.speech_stopped':
+                  dataStreamWriter.writeData({
+                    type: chunk.type,
+                    timestamp: new Date().toISOString()
+                  });
+                  break;
+
+                case 'response.content.done':
+                case 'response.done':
+                  dataStreamWriter.writeData({
+                    type: chunk.type,
+                    timestamp: new Date().toISOString()
+                  });
+                  break;
+
+                case 'rate_limits.updated':
+                  console.log('Rate limits updated:', chunk);
+                  break;
+              }
+            }
+          }
+
+          // Handle mark or stop events
+          if (event === 'mark' || event === 'stop') {
+            console.log(`Stream ${event} received for callId:`, streamCallId);
+            // Cleanup for this call
+            activeCallInstructions.delete(streamCallId);
+            dataStreamWriter.writeData({
+              type: 'stream.ended',
+              timestamp: new Date().toISOString()
+            });
+          }
+        } finally {
+          // Cleanup if the stream ends for any reason
+          if (streamCallId) {
+            console.log('Cleaning up stream for callId:', streamCallId);
+            activeCallInstructions.delete(streamCallId);
+          }
+        }
+      },
+      onError: error => {
+        // Log error and cleanup
+        console.error('Stream error:', error);
+        if (streamCallId) {
+          activeCallInstructions.delete(streamCallId);
+        }
+        return error instanceof Error ? error.message : String(error);
+      },
+    });
+
+    // Set streaming headers
+    reply.header('X-Vercel-AI-Data-Stream', 'v1');
+    reply.header('Content-Type', 'text/plain; charset=utf-8');
+
+    return reply.send(dataStream);
   } catch (error) {
+    // Cleanup in case of error
+    if (streamCallId) {
+      activeCallInstructions.delete(streamCallId);
+    }
     console.error('Error in media-stream:', error);
     reply.code(500).send({ 
       success: false, 
       error: error.message 
     });
   }
-});
-
-// Add endpoint to handle AI responses
-fastify.post('/api/ai-response/:callId', async (request, reply) => {
-  try {
-    const { callId } = request.params;
-    const { text } = request.body;
-    
-    // Generate audio response
-    const response = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: "alloy",
-      input: text
-    });
-
-    // Send through Pusher
-    await safePusherTrigger(`call-${callId}`, 'ai-response', {
-      audio: response.audioData,
-      text,
-      timestamp: new Date().toISOString()
-    });
-
-    reply.send({ success: true });
-  } catch (error) {
-    console.error('Error generating AI response:', error);
-    reply.code(500).send({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
-// Update client-side connection status
-fastify.post('/api/connection-status/:callId', async (request, reply) => {
-  try {
-    const { callId } = request.params;
-    const { status } = request.body;
-    
-    await safePusherTrigger(`call-${callId}`, 'connection-status', {
-      status,
-      timestamp: new Date().toISOString()
-    });
-
-    reply.send({ success: true });
-  } catch (error) {
-    console.error('Error updating connection status:', error);
-    reply.code(500).send({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
-// Endpoint to handle audio data from Twilio
-fastify.post('/api/audio-chunk', async (request, reply) => {
-  const { callId, audioData } = request.body;
-  
-  const openAiWs = openAIConnections.get(callId);
-  if (openAiWs && openAiWs.readyState === WebSocket.OPEN) {
-    const audioAppend = {
-      type: 'input_audio_buffer.append',
-      audio: audioData
-    };
-    openAiWs.send(JSON.stringify(audioAppend));
-  }
-  
-  reply.send({ success: true });
-});
-
-// Clean up resources when call ends
-fastify.post('/api/call-ended', async (request, reply) => {
-  const { callId } = request.body;
-  
-  const openAiWs = openAIConnections.get(callId);
-  if (openAiWs) {
-    openAiWs.close();
-    openAIConnections.delete(callId);
-  }
-  
-  activeCallInstructions.delete(callId);
-  reply.send({ success: true });
 });
 
 // Add status callback endpoints
