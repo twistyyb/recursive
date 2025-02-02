@@ -47,6 +47,20 @@ const pusher = new Pusher(requiredEnvVars.PUSHER_APP_ID,{
   useTLS: true
 });
 
+// Add after Pusher initialization, before connectToOpenAI
+const safePusherTrigger = async (channel, event, data) => {
+  try {
+    await pusher.trigger(channel, event, data);
+    debugLog(`Pusher event sent: ${event}`, { channel, data });
+  } catch (error) {
+    debugLog(`Pusher trigger error for ${event}:`, {
+      error: error.message,
+      channel,
+      data
+    });
+    throw error;
+  }
+};
 
 const fastify = Fastify();
 fastify.register(fastifyFormBody);
