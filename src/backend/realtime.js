@@ -155,7 +155,9 @@ fastify.all('/api/incoming-call', async (request, reply) => {
 // WebSocket route for media-stream
 fastify.register(async (fastify) => {
   fastify.get('/api/media-stream/:callId', { websocket: true }, (connection, req) => {
-      const callId = req.params.callId;
+    console.log('media-stream route hit');
+    console.log('req:', req);
+    const callId = req.params.callId;
       if (!callId) {
         console.error('No callId found');
         connection.socket.close();
