@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "4.6.1",
-    "@esbuild/linux-x64": "0.19.12"
+    "@esbuild/linux-x64": "0.19.12",
+    "@rollup/rollup-linux-x64-gnu": "4.6.1"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",
