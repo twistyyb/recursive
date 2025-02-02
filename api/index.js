@@ -211,7 +211,7 @@ fastify.all('/api/incoming-call', async (request, reply) => {
     <Response>
       <Say>Connecting you to the interviewer...</Say>
       <Connect>
-        <Stream url="wss://${request.headers.host}/api/media-stream/?callId=${callId}" />
+        <Stream url="https://${request.headers.host}/api/media-stream/${callId}" mode="bidirectional" />
       </Connect>
     </Response>`;
 
