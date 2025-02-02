@@ -352,6 +352,11 @@ fastify.post('/api/auth/verify', async (request, reply) => {
   }
 });
 
+// Add this near your other route definitions
+fastify.get('/api/health', async (request, reply) => {
+  return { status: 'ok' };
+});
+
 // Export the Fastify app as a serverless function
 export default async (req, res) => {
   await fastify.ready(); // Ensure Fastify is ready

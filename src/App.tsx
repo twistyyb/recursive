@@ -3,6 +3,7 @@ import './index.css'
 import styled from 'styled-components'
 import { AiConfig } from './components/aiConfig'
 import Login from './components/Login';
+import { useApiInitialization } from './api';
 
 const Title = styled.h1`
   font-family: 'JetBrains Mono', 'Courier New', monospace;
@@ -21,6 +22,8 @@ const Subtitle = styled.p`
 `;
 
 function App() {
+  useApiInitialization();
+  
   return (
     <>
       <Login />
@@ -30,7 +33,7 @@ function App() {
       </Subtitle>
       <AiConfig />
     </>
-  )
+  );
 }
 
 export default App;
