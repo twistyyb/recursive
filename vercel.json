@@ -20,10 +20,5 @@
       "source": "/(.*)",
       "destination": "/dist/index.html"
     }
-  ],
-  "functions": {
-    "api/**/*.js": {
-      "runtime": "nodejs18"
-    }
-  }
+  ]
 }
