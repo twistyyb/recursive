@@ -155,8 +155,9 @@ fastify.post('/api/initiate-call', async (request, reply) => {
     const twilioClient = twilio(accountSid, authToken);
 
     // Create Twilio call with enhanced error handling
+    let call; // Declare call variable in the outer scope
     try {
-      const call = await twilioClient.calls.create({
+      call = await twilioClient.calls.create({
         to: phoneNumber,
         from: "+18445417040",
         url: `${process.env.SERVER_URL}/api/incoming-call?callId=${callId}`,
@@ -229,6 +230,30 @@ fastify.post('/api/call-ended', async (request, reply) => {
   
   activeCallInstructions.delete(callId);
   reply.send({ success: true });
+});
+
+// Add status callback endpoint
+fastify.post('/api/status-callback', async (request, reply) => {
+  try {
+    const { CallSid, CallStatus } = request.body;
+    debugLog('Received status callback:', { CallSid, CallStatus });
+    
+    if (!CallSid || !CallStatus) {
+      return reply.code(400).send({ 
+        error: 'Missing required fields',
+        details: 'CallSid and CallStatus are required'
+      });
+    }
+    
+    callStatuses.set(CallSid, CallStatus);
+    return reply.code(200).send();
+  } catch (error) {
+    debugLog('Status callback error:', {
+      error: error.message,
+      stack: error.stack
+    });
+    return reply.code(500).send({ error: 'Internal server error' });
+  }
 });
 
 fastify.get('/api/health', async (request, reply) => {
