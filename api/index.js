@@ -165,7 +165,43 @@ fastify.post('/api/call-ended', async (request, reply) => {
   reply.send({ success: true });
 });
 
+fastify.get('/api/health', async (request, reply) => {
+  try {
+    // Basic API health check
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      mode: 'serverless'
+    };
+  } catch (error) {
+    console.error('Health check failed:', error);
+    reply.code(500).send({ 
+      status: 'error',
+      error: error.message 
+    });
+  }
+});
+
+// Add after the fastify initialization
+const start = async () => {
+  try {
+    await fastify.listen({ 
+      port: process.env.PORT || 3000,
+      host: '0.0.0.0'
+    });
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+};
+
+// Only start the server if we're not in a Vercel serverless environment
+if (process.env.VERCEL !== '1') {
+  start();
+}
+
+// Export for serverless
 export default async (req, res) => {
   await fastify.ready();
   fastify.server.emit('request', req, res);
-}
+};

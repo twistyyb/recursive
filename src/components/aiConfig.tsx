@@ -271,23 +271,37 @@ export function AiConfig() {
   }, [isCallActive, callSid]);
 
   useEffect(() => {
+    if (!import.meta.env.VITE_PUSHER_KEY) {
+      console.error('Pusher configuration missing');
+      return;
+    }
+
     const pusher = new Pusher(import.meta.env.VITE_PUSHER_KEY, {
-      cluster: import.meta.env.VITE_PUSHER_CLUSTER
+      cluster: import.meta.env.VITE_PUSHER_CLUSTER,
+      forceTLS: true
     });
 
+    // Subscribe only when needed
     const channel = pusher.subscribe('calls');
+    
+    channel.bind('pusher:subscription_succeeded', () => {
+      console.log('Successfully subscribed to Pusher channel');
+    });
+
     channel.bind('call-created', (data: {
       callSid: string,
       status: string,
       timestamp: string
     }) => {
       console.log('New call created:', data);
-      // Optionally update UI or trigger other actions
+      setCallStatus(`Call status updated: ${data.status}`);
     });
 
+    // Clean up
     return () => {
       channel.unbind_all();
       channel.unsubscribe();
+      pusher.disconnect();
     };
   }, []);
 
