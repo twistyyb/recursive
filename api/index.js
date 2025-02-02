@@ -2,9 +2,7 @@ import Fastify from 'fastify';
 import fastifyFormBody from '@fastify/formbody';
 import fastifyCors from '@fastify/cors';
 import dotenv from 'dotenv';
-import Pusher from 'pusher';
 import twilio from 'twilio';
-import { WebSocket } from 'ws';
 import { openai } from '@ai-sdk/openai';
 
 dotenv.config();
@@ -18,10 +16,6 @@ const debugLog = (message, data = null) => {
 
 // Add after dotenv.config()
 const requiredEnvVars = {
-  PUSHER_APP_ID: process.env.PUSHER_APP_ID,
-  PUSHER_KEY: process.env.PUSHER_KEY,
-  PUSHER_SECRET: process.env.PUSHER_SECRET,
-  PUSHER_CLUSTER: process.env.PUSHER_CLUSTER,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
@@ -40,29 +34,6 @@ if (missingVars.length > 0) {
   process.exit(1);
 }
 console.log(requiredEnvVars);
-// Initialize Pusher with validated environment variables
-const pusher = new Pusher({
-  appId: requiredEnvVars.PUSHER_APP_ID,
-  key: requiredEnvVars.PUSHER_KEY,
-  secret: requiredEnvVars.PUSHER_SECRET,
-  cluster: requiredEnvVars.PUSHER_CLUSTER,
-  useTLS: true
-});
-
-// Add after Pusher initialization, before connectToOpenAI
-const safePusherTrigger = async (channel, event, data) => {
-  try {
-    await pusher.trigger(channel, event, data);
-    debugLog(`Pusher event sent: ${event}`, { channel, data });
-  } catch (error) {
-    debugLog(`Pusher trigger error for ${event}:`, {
-      error: error.message,
-      channel,
-      data
-    });
-    throw error;
-  }
-};
 
 const fastify = Fastify({ logger: true });
 const callStatuses = new Map(); // Add this to store call statuses

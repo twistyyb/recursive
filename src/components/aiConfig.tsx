@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { phone, PhoneResult } from 'phone'
 import styled from 'styled-components'
-import Pusher from 'pusher-js'
 
 // Add styled components definitions
 const Container = styled.div`
@@ -188,8 +187,6 @@ export function AiConfig() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-
-
         },
         body: JSON.stringify({
           phoneNumber: number,
@@ -269,42 +266,6 @@ export function AiConfig() {
       }
     };
   }, [isCallActive, callSid]);
-
-  useEffect(() => {
-    if (!import.meta.env.VITE_PUSHER_KEY || !import.meta.env.VITE_PUSHER_CLUSTER) {
-      console.error('Pusher configuration missing (key or cluster)');
-      return;
-    }
-
-    const pusher = new Pusher(import.meta.env.VITE_PUSHER_KEY, {
-      cluster: import.meta.env.VITE_PUSHER_CLUSTER,
-      forceTLS: true,
-      enabledTransports: ['ws', 'wss']
-    });
-
-    // Subscribe only when needed
-    const channel = pusher.subscribe('calls');
-    
-    channel.bind('pusher:subscription_succeeded', () => {
-      console.log('Successfully subscribed to Pusher channel');
-    });
-
-    channel.bind('call-created', (data: {
-      callSid: string,
-      status: string,
-      timestamp: string
-    }) => {
-      console.log('New call created:', data);
-      setCallStatus(`Call status updated: ${data.status}`);
-    });
-
-    // Clean up
-    return () => {
-      channel.unbind_all();
-      channel.unsubscribe();
-      pusher.disconnect();
-    };
-  }, []);
 
   const handleAddSkill = () => {
     setTargetSkillsQualities([...targetSkillsQualities, '']);
