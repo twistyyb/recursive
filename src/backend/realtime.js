@@ -38,7 +38,7 @@ fastify.addHook('onRequest', async (request, reply) => {
   reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
   
   // Standard CORS headers
-  reply.header('Access-Control-Allow-Origin', request.headers.origin || 'http://localhost:5173');
+  reply.header('Access-Control-Allow-Origin', request.headers.origin || import.meta.env.VITE_FRONTEND_URL);
   reply.header('Access-Control-Allow-Credentials', 'true');
   reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');

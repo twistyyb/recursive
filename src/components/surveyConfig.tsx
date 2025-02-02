@@ -201,12 +201,14 @@ export function SurveyConfig() {
       console.log('Making POST request to create call:', {
         phone: number,
         survey: questions,
-        endpoint: 'http://localhost:3000/api/create-call'
+        endpoint: `${import.meta.env.VITE_API_URL}/api/create-call`
+
       });
-      const response = await fetch('http://localhost:3000/api/create-call', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/create-call`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+
         },
         body: JSON.stringify({
           phone: number,
@@ -241,10 +243,11 @@ export function SurveyConfig() {
     if (isCallActive && callSid) {
       const checkCallStatus = async () => {
         try {
-          const response = await fetch(`http://localhost:3000/api/status-callback?callSid=${callSid}`, {
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/status-callback?callSid=${callSid}`, {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',
+
             }
           });
 
