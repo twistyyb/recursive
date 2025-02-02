@@ -19,7 +19,7 @@ fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 fastify.register(fastifyCors, {
   origin: [
-    'http://localhost:5173',
+    import.meta.env.VITE_FRONTEND_URL,
     'https://accounts.google.com',
     'https://www.googleapis.com'
   ],
