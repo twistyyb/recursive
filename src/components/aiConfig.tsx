@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { phone, PhoneResult } from 'phone'
 import styled from 'styled-components'
+import Pusher from 'pusher-js'
 
 // Add styled components definitions
 const Container = styled.div`
@@ -268,6 +269,27 @@ export function AiConfig() {
       }
     };
   }, [isCallActive, callSid]);
+
+  useEffect(() => {
+    const pusher = new Pusher(import.meta.env.VITE_PUSHER_KEY, {
+      cluster: import.meta.env.VITE_PUSHER_CLUSTER
+    });
+
+    const channel = pusher.subscribe('calls');
+    channel.bind('call-created', (data: {
+      callSid: string,
+      status: string,
+      timestamp: string
+    }) => {
+      console.log('New call created:', data);
+      // Optionally update UI or trigger other actions
+    });
+
+    return () => {
+      channel.unbind_all();
+      channel.unsubscribe();
+    };
+  }, []);
 
   const handleAddSkill = () => {
     setTargetSkillsQualities([...targetSkillsQualities, '']);
