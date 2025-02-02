@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
 import fastifyCors from '@fastify/cors';
+import Pusher from 'pusher';
 
 dotenv.config();
 
@@ -117,11 +118,17 @@ fastify.post('/api/initiate-call', async (request, reply) => {
     // Set initial status
     callStatuses.set(call.sid, 'initiated');
 
+    // Trigger Pusher event
+    await safePusherTrigger('calls', 'call-created', {
+      callSid: call.sid,
+      status: 'initiated',
+      timestamp: new Date().toISOString()
+    });
+
     reply.send({
       success: true,
       callSid: call.sid,
-      message: 'Call initiated successfully',
-      
+      message: 'Call initiated successfully'
     });
   } catch (error) {
     console.error('Error initiating call:', error);
@@ -350,6 +357,29 @@ fastify.post('/api/auth/verify', async (request, reply) => {
     });
   }
 });
+
+const pusher = new Pusher({
+  appId: process.env.PUSHER_APP_ID,
+  key: process.env.PUSHER_KEY,
+  secret: process.env.PUSHER_SECRET,
+  cluster: process.env.PUSHER_CLUSTER,
+  useTLS: true
+});
+
+// Helper function for Pusher events
+const safePusherTrigger = async (channel, event, data) => {
+  try {
+    await pusher.trigger(channel, event, data);
+    console.log(`Pusher event sent: ${event}`, { channel, data });
+  } catch (error) {
+    console.error(`Pusher trigger error for ${event}:`, {
+      error: error.message,
+      channel,
+      data
+    });
+    throw error;
+  }
+};
 
 fastify.listen({ port: PORT }, (err) => {
   if (err) {
