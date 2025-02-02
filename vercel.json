@@ -24,5 +24,11 @@
       "src": "/(.*)",
       "dest": "/dist/index.html"
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    }
   ]
 }
