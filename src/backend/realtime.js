@@ -161,19 +161,8 @@ fastify.register(async (fastify) => {
     // Extract callId from URL path
     const urlPath = req.url;
     const callId = urlPath.split('media-stream/')[1]?.split('?')[0];
-    
-    if (!callId) {
-      console.error('No valid callId found in URL:', urlPath);
-      connection.socket.close();
-      return;
-    }
 
     const instruction = activeCallInstructions.get(callId);
-    if (!instruction) {
-        console.error('No instruction found for callId:', callId);
-        connection.socket.close();
-        return;
-    }
 
     console.log('Client connected');
     const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
