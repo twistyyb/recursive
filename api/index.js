@@ -219,6 +219,19 @@ fastify.post('/api/initiate-call', async (request, reply) => {
   }
 });
 
+fastify.all('/api/incoming-call', async (request, reply) => {
+  const callId = request.query.callId || request.body.callId;
+
+  const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+    <Response>
+      <Connect>
+        <Stream url="wss://${request.headers.host}/api/media-stream/${callId}" />
+      </Connect>
+    </Response>`;
+
+  reply.type('text/xml').send(twimlResponse);
+});
+
 // Endpoint to handle audio data from Twilio
 fastify.post('/api/audio-chunk', async (request, reply) => {
   const { callId, audioData } = request.body;
