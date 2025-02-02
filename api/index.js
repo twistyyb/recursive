@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import fastifyFormBody from '@fastify/formbody';
 import fastifyCors from '@fastify/cors';
 import dotenv from 'dotenv';
-import Pusher from 'pusher-js';
+import Pusher from 'pusher';
 import twilio from 'twilio';
 import { WebSocket } from 'ws';
 
@@ -40,7 +40,8 @@ if (missingVars.length > 0) {
 }
 console.log(requiredEnvVars);
 // Initialize Pusher with validated environment variables
-const pusher = new Pusher(requiredEnvVars.PUSHER_APP_ID,{
+const pusher = new Pusher({
+  appId: requiredEnvVars.PUSHER_APP_ID,
   key: requiredEnvVars.PUSHER_KEY,
   secret: requiredEnvVars.PUSHER_SECRET,
   cluster: requiredEnvVars.PUSHER_CLUSTER,
@@ -105,21 +106,6 @@ const connectToOpenAI = async (callId, instruction) => {
   openAiWs.on('close', () => {
     debugLog(`OpenAI WebSocket closed for call ${callId}`);
   });
-
-  // Update Pusher trigger with error handling
-  const safePusherTrigger = async (channel, event, data) => {
-    try {
-      await pusher.trigger(channel, event, data);
-      debugLog(`Pusher event sent: ${event}`, { channel, data });
-    } catch (error) {
-      debugLog(`Pusher trigger error for ${event}:`, {
-        error: error.message,
-        channel,
-        data
-      });
-      throw error;
-    }
-  };
 
   openAiWs.on('message', (data) => {
     try {
