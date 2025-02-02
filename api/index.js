@@ -131,7 +131,9 @@ fastify.all('/api/incoming-call', async (request, reply) => {
     <Response>
       <Say>Connecting you to the interviewer...</Say>
       <Connect>
-        <Stream url="${process.env.SERVER_URL}/api/media-stream?callId=${callId}"/>
+        <Stream url="${process.env.SERVER_URL}/api/media-stream">
+          <Parameter name="callId" value="${callId}"/>
+        </Stream>
       </Connect>
     </Response>`;
 
@@ -144,7 +146,7 @@ fastify.route({
   url: '/api/media-stream/:callId',
   handler: async (request, reply) => {
     try {
-      const { callId } = request.params.callId || request.query.callId || request.body.callId;
+      const callId = request.params.callId || request.query.callId || request.body.callId || request.body.parameters.callId;
       const { event, media, start, parameters } = request.body || {};
       
       const streamCallId = parameters?.callId || callId;
