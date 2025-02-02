@@ -4,6 +4,7 @@ import fastifyCors from '@fastify/cors';
 import dotenv from 'dotenv';
 import twilio from 'twilio';
 import { openai } from '@ai-sdk/openai';
+import { createDataStream } from 'ai';
 
 dotenv.config();
 
@@ -54,6 +55,16 @@ fastify.register(fastifyCors, {
 // Maintain state
 const activeCallInstructions = new Map();
 
+// Add after environment variables
+const VOICE = 'alloy';
+
+// Add after VOICE definition
+const LOG_EVENT_TYPES = [
+  'session.updated',
+  'conversation.item.input_audio_transcription.completed',
+  'response.audio_transcript.done'
+];
+
 // Modified initiate-call endpoint
 fastify.post('/api/initiate-call', async (request, reply) => {
   try {
@@ -65,10 +76,6 @@ fastify.post('/api/initiate-call', async (request, reply) => {
     let instruction = `Your name is Nava, you are a kind but professional AI interviewer at the company ${companyName}...`; // Your existing instruction string
 
     activeCallInstructions.set(callId, instruction);
-    
-    // Initialize OpenAI connection
-    const openAiWs = await connectToOpenAI(callId, instruction);
-    openAIConnections.set(callId, openAiWs);
 
     // Create Twilio call
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -98,12 +105,6 @@ fastify.post('/api/initiate-call', async (request, reply) => {
     }
 
     callStatuses.set(call.sid, 'initiated');
-
-    await safePusherTrigger('calls', 'call-created', {
-      callSid: call.sid,
-      status: 'initiated',
-      timestamp: new Date().toISOString()
-    });
 
     reply.send({
       success: true,
@@ -142,63 +143,55 @@ fastify.post('/api/media-stream/:callId', async (request, reply) => {
     const { callId } = request.params;
     const { event, media, start, parameters } = request.body;
     
-    // Extract callId from parameters if present
     const streamCallId = parameters?.callId || callId;
     console.log('Stream parameters:', parameters);
     console.log('Using callId:', streamCallId);
     
-    // Create data stream for real-time communication
     const dataStream = createDataStream({
       execute: async dataStreamWriter => {
         try {
           const instruction = activeCallInstructions.get(streamCallId);
-          
+          let openaiConnection = null;
+
           if (event === 'start') {
-            const streamSid = start.streamSid;
-            console.log('Stream started:', { streamSid, parameters });
+            console.log('Starting stream with instruction:', instruction);
             
             // Write initial session data
             dataStreamWriter.writeData({
               type: 'session.started',
-              streamSid,
+              streamSid: start.streamSid,
               timestamp: new Date().toISOString()
             });
 
-            // Initialize OpenAI session
-            const sessionUpdate = {
-              turn_detection: { type: 'server_vad' },
-              input_audio_format: 'g711_ulaw',
-              output_audio_format: 'g711_ulaw',
-              voice: VOICE,
-              instructions: instruction,
-              modalities: ["text", "audio"],
-              temperature: 0.8,
-              input_audio_transcription: {'model': 'whisper-1'},
-            };
-
+            // Send initial session configuration through dataStream
             dataStreamWriter.writeData({
               type: 'session.update',
-              session: sessionUpdate
+              session: {
+                turn_detection: { type: 'server_vad' },
+                input_audio_format: 'g711_ulaw',
+                output_audio_format: 'g711_ulaw',
+                voice: VOICE,
+                instructions: instruction,
+                modalities: ["text", "audio"],
+                temperature: 0.8,
+                input_audio_transcription: {'model': 'whisper-1'},
+              }
             });
           }
-          
+
           if (event === 'media' && media?.payload) {
-            // Send audio buffer to OpenAI
-            dataStreamWriter.writeData({
-              type: 'input_audio_buffer.append',
-              audio: media.payload
-            });
-
-            // Process response from OpenAI
+            // Process audio through OpenAI
             const openaiResponse = await openai.audio.realtime.process({
-              audio: media.payload,
               model: 'gpt-4o-realtime-preview-2024-10-01',
-              session: instruction
+              audio: media.payload,
+              headers: {
+                Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+                'OpenAI-Beta': 'realtime=v1'
+              }
             });
 
-            // Handle OpenAI response
+            // Handle OpenAI response chunks
             for await (const chunk of openaiResponse) {
-              // Log event types for debugging
               if (LOG_EVENT_TYPES.includes(chunk.type)) {
                 console.log(`Received event: ${chunk.type}`);
               }
@@ -261,26 +254,18 @@ fastify.post('/api/media-stream/:callId', async (request, reply) => {
             }
           }
 
-          // Handle mark or stop events
-          if (event === 'mark' || event === 'stop') {
-            console.log(`Stream ${event} received for callId:`, streamCallId);
-            // Cleanup for this call
+          // Handle connection close
+          openaiConnection?.on('close', () => {
+            console.log('OpenAI connection closed');
             activeCallInstructions.delete(streamCallId);
-            dataStreamWriter.writeData({
-              type: 'stream.ended',
-              timestamp: new Date().toISOString()
-            });
-          }
-        } finally {
-          // Cleanup if the stream ends for any reason
-          if (streamCallId) {
-            console.log('Cleaning up stream for callId:', streamCallId);
-            activeCallInstructions.delete(streamCallId);
-          }
+          });
+
+        } catch (error) {
+          console.error('Error in stream execution:', error);
+          throw error;
         }
       },
       onError: error => {
-        // Log error and cleanup
         console.error('Stream error:', error);
         if (streamCallId) {
           activeCallInstructions.delete(streamCallId);
@@ -289,13 +274,10 @@ fastify.post('/api/media-stream/:callId', async (request, reply) => {
       },
     });
 
-    // Set streaming headers
     reply.header('X-Vercel-AI-Data-Stream', 'v1');
     reply.header('Content-Type', 'text/plain; charset=utf-8');
-
     return reply.send(dataStream);
   } catch (error) {
-    // Cleanup in case of error
     if (streamCallId) {
       activeCallInstructions.delete(streamCallId);
     }
@@ -368,7 +350,7 @@ const start = async () => {
 
 start();
 
-export default async (req, res) => {
+export default async function handler(req, res) {
   await fastify.ready();
   fastify.server.emit('request', req, res);
-};
+}
