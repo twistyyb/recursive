@@ -131,161 +131,163 @@ fastify.all('/api/incoming-call', async (request, reply) => {
     <Response>
       <Say>Connecting you to the interviewer...</Say>
       <Connect>
-        <Stream url="wss://${request.headers.host}/api/media-stream?callId=${callId}" />
+        <Stream url="${process.env.SERVER_URL}/api/media-stream?callId=${callId}"/>
       </Connect>
     </Response>`;
 
   reply.type('text/xml').send(twimlResponse);
 });
 
-fastify.post('/api/media-stream/:callId', async (request, reply) => {
-  try {
-    const { callId } = request.params;
-    const { event, media, start, parameters } = request.body;
-    
-    const streamCallId = parameters?.callId || callId;
-    console.log('Stream parameters:', parameters);
-    console.log('Using callId:', streamCallId);
-    
-    const dataStream = createDataStream({
-      execute: async dataStreamWriter => {
-        try {
-          const instruction = activeCallInstructions.get(streamCallId);
-          let openaiConnection = null;
+// Change from POST to handle both GET and POST
+fastify.route({
+  method: ['GET', 'POST'],
+  url: '/api/media-stream/:callId',
+  handler: async (request, reply) => {
+    try {
+      const { callId } = request.params.callId || request.query.callId || request.body.callId;
+      const { event, media, start, parameters } = request.body || {};
+      
+      const streamCallId = parameters?.callId || callId;
+      console.log('Stream parameters:', parameters);
+      console.log('Using callId:', streamCallId);
+      
+      const dataStream = createDataStream({
+        execute: async dataStreamWriter => {
+          try {
+            const instruction = activeCallInstructions.get(streamCallId);
+            let openaiConnection = null;
 
-          if (event === 'start') {
-            console.log('Starting stream with instruction:', instruction);
-            
-            // Write initial session data
-            dataStreamWriter.writeData({
-              type: 'session.started',
-              streamSid: start.streamSid,
-              timestamp: new Date().toISOString()
-            });
+            if (event === 'start') {
+              console.log('Starting stream with instruction:', instruction);
+              
+              // Write initial session data
+              dataStreamWriter.writeData({
+                type: 'session.started',
+                streamSid: start.streamSid,
+                timestamp: new Date().toISOString()
+              });
 
-            // Send initial session configuration through dataStream
-            dataStreamWriter.writeData({
-              type: 'session.update',
-              session: {
-                turn_detection: { type: 'server_vad' },
-                input_audio_format: 'g711_ulaw',
-                output_audio_format: 'g711_ulaw',
-                voice: VOICE,
-                instructions: instruction,
-                modalities: ["text", "audio"],
-                temperature: 0.8,
-                input_audio_transcription: {'model': 'whisper-1'},
-              }
-            });
-          }
+              // Send initial session configuration through dataStream
+              dataStreamWriter.writeData({
+                type: 'session.update',
+                session: {
+                  turn_detection: { type: 'server_vad' },
+                  input_audio_format: 'g711_ulaw',
+                  output_audio_format: 'g711_ulaw',
+                  voice: VOICE,
+                  instructions: instruction,
+                  modalities: ["text", "audio"],
+                  temperature: 0.8,
+                  input_audio_transcription: {'model': 'whisper-1'},
+                }
+              });
+            }
 
-          if (event === 'media' && media?.payload) {
-            // Process audio through OpenAI
-            const openaiResponse = await openai.audio.realtime.process({
-              model: 'gpt-4o-realtime-preview-2024-10-01',
-              audio: media.payload,
-              headers: {
-                Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-                'OpenAI-Beta': 'realtime=v1'
-              }
-            });
+            if (event === 'media' && media?.payload) {
+              // Process audio through OpenAI
+              const openaiResponse = await openai.audio.realtime.process({
+                model: 'gpt-4o-realtime-preview-2024-10-01',
+                audio: media.payload,
+                headers: {
+                  Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+                  'OpenAI-Beta': 'realtime=v1'
+                }
+              });
 
-            // Handle OpenAI response chunks
-            for await (const chunk of openaiResponse) {
-              if (LOG_EVENT_TYPES.includes(chunk.type)) {
-                console.log(`Received event: ${chunk.type}`);
-              }
+              // Handle OpenAI response chunks
+              for await (const chunk of openaiResponse) {
+                if (LOG_EVENT_TYPES.includes(chunk.type)) {
+                  console.log(`Received event: ${chunk.type}`);
+                }
 
-              switch (chunk.type) {
-                case 'session.updated':
-                  console.log('Session updated successfully');
-                  break;
+                switch (chunk.type) {
+                  case 'session.updated':
+                    console.log('Session updated successfully');
+                    break;
 
-                case 'response.audio.delta':
-                  if (chunk.delta) {
-                    const audioDelta = {
-                      event: 'media',
-                      streamSid: start.streamSid,
-                      media: { payload: Buffer.from(chunk.delta, 'base64').toString('base64') }
-                    };
-                    dataStreamWriter.writeData(audioDelta);
-                  }
-                  break;
+                  case 'response.audio.delta':
+                    if (chunk.delta) {
+                      const audioDelta = {
+                        event: 'media',
+                        streamSid: start.streamSid,
+                        media: { payload: Buffer.from(chunk.delta, 'base64').toString('base64') }
+                      };
+                      dataStreamWriter.writeData(audioDelta);
+                    }
+                    break;
 
-                case 'conversation.item.input_audio_transcription.completed':
-                  console.log('User:', chunk.transcript);
-                  dataStreamWriter.writeData({
-                    type: 'transcription',
-                    speaker: 'User',
-                    text: chunk.transcript
-                  });
-                  break;
+                  case 'conversation.item.input_audio_transcription.completed':
+                    console.log('User:', chunk.transcript);
+                    dataStreamWriter.writeData({
+                      type: 'transcription',
+                      speaker: 'User',
+                      text: chunk.transcript
+                    });
+                    break;
 
-                case 'response.audio_transcript.done':
-                  console.log('AI:', chunk.transcript);
-                  dataStreamWriter.writeData({
-                    type: 'transcription',
-                    speaker: 'AI',
-                    text: chunk.transcript
-                  });
-                  break;
+                  case 'response.audio_transcript.done':
+                    console.log('AI:', chunk.transcript);
+                    dataStreamWriter.writeData({
+                      type: 'transcription',
+                      speaker: 'AI',
+                      text: chunk.transcript
+                    });
+                    break;
 
-                case 'input_audio_buffer.committed':
-                case 'input_audio_buffer.speech_started':
-                case 'input_audio_buffer.speech_stopped':
-                  dataStreamWriter.writeData({
-                    type: chunk.type,
-                    timestamp: new Date().toISOString()
-                  });
-                  break;
+                  case 'input_audio_buffer.committed':
+                  case 'input_audio_buffer.speech_started':
+                  case 'input_audio_buffer.speech_stopped':
+                    dataStreamWriter.writeData({
+                      type: chunk.type,
+                      timestamp: new Date().toISOString()
+                    });
+                    break;
 
-                case 'response.content.done':
-                case 'response.done':
-                  dataStreamWriter.writeData({
-                    type: chunk.type,
-                    timestamp: new Date().toISOString()
-                  });
-                  break;
+                  case 'response.content.done':
+                  case 'response.done':
+                    dataStreamWriter.writeData({
+                      type: chunk.type,
+                      timestamp: new Date().toISOString()
+                    });
+                    break;
 
-                case 'rate_limits.updated':
-                  console.log('Rate limits updated:', chunk);
-                  break;
+                  case 'rate_limits.updated':
+                    console.log('Rate limits updated:', chunk);
+                    break;
+                }
               }
             }
+
+            // Handle connection close
+            openaiConnection?.on('close', () => {
+              console.log('OpenAI connection closed');
+              activeCallInstructions.delete(streamCallId);
+            });
+
+          } catch (error) {
+            console.error('Error in stream execution:', error);
+            throw error;
           }
-
-          // Handle connection close
-          openaiConnection?.on('close', () => {
-            console.log('OpenAI connection closed');
+        },
+        onError: error => {
+          console.error('Stream error:', error);
+          if (streamCallId) {
             activeCallInstructions.delete(streamCallId);
-          });
+          }
+          return error instanceof Error ? error.message : String(error);
+        },
+      });
 
-        } catch (error) {
-          console.error('Error in stream execution:', error);
-          throw error;
-        }
-      },
-      onError: error => {
-        console.error('Stream error:', error);
-        if (streamCallId) {
-          activeCallInstructions.delete(streamCallId);
-        }
-        return error instanceof Error ? error.message : String(error);
-      },
-    });
-
-    reply.header('X-Vercel-AI-Data-Stream', 'v1');
-    reply.header('Content-Type', 'text/plain; charset=utf-8');
-    return reply.send(dataStream);
-  } catch (error) {
-    if (streamCallId) {
-      activeCallInstructions.delete(streamCallId);
+      reply.header('X-Vercel-AI-Data-Stream', 'v1');
+      reply.header('Content-Type', 'text/plain; charset=utf-8');
+      return reply.send(dataStream);
+    } catch (error) {
+      console.error('Error in media-stream:', error);
+      reply.code(500).send({ 
+        success: false, 
+        error: error.message 
+      });
     }
-    console.error('Error in media-stream:', error);
-    reply.code(500).send({ 
-      success: false, 
-      error: error.message 
-    });
   }
 });
 
