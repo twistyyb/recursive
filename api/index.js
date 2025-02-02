@@ -233,6 +233,127 @@ fastify.all('/api/incoming-call', async (request, reply) => {
   reply.type('text/xml').send(twimlResponse);
 });
 
+// Media Stream
+fastify.register(async (fastify) => {
+  fastify.get('/api/media-stream/:callId', { websocket: true }, (connection, req) => {
+      const callId = req.params.callId;
+      if (!callId) {
+        console.error('No callId found');
+        connection.socket.close();
+        return;
+      }
+
+      const instruction = activeCallInstructions.get(callId);
+      if (!instruction) {
+          console.error('No instruction found for callId:', callId);
+          connection.socket.close();
+          return;
+      }
+
+      console.log('Client connected');
+      const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
+          headers: {
+              Authorization: `Bearer ${OPENAI_API_KEY}`,
+              "OpenAI-Beta": "realtime=v1"
+          }
+      });
+      let streamSid = null;
+      const sendSessionUpdate = () => {
+          
+          console.log('session update with instruction:', instruction);
+          const sessionUpdate = {
+              type: 'session.update',
+              session: {
+                  turn_detection: { type: 'server_vad' },
+                  input_audio_format: 'g711_ulaw',
+                  output_audio_format: 'g711_ulaw',
+                  voice: VOICE,
+                  instructions: instruction,
+                  modalities: ["text", "audio"],
+                  temperature: 0.8,//randomness,
+                  input_audio_transcription: {'model': 'whisper-1'},
+              }
+          };
+          openAiWs.send(JSON.stringify(sessionUpdate));
+      };
+      // Open event for OpenAI WebSocket
+      openAiWs.on('open', () => {
+          console.log('Connected to the OpenAI Realtime API');
+          setTimeout(sendSessionUpdate, 250); // Ensure connection stability, send after .25 seconds
+      });
+      // Listen for messages from the OpenAI WebSocket (and send to Twilio if necessary)
+
+      openAiWs.on('message', (data) => {
+          try {
+              const response = JSON.parse(data);
+              if (LOG_EVENT_TYPES.includes(response.type)) {
+                  //console.log(`Received event: ${response.type}`);
+              }
+              if (response.type === 'session.updated') {
+                  //console.log('Session updated successfully');
+              }
+              if (response.type === 'conversation.item.input_audio_transcription.completed') {
+                  console.log('User:', response.transcript);
+              }
+              if (response.type === 'response.audio.delta' && response.delta) {
+                  const audioDelta = {
+                      event: 'media',
+                      streamSid: streamSid,
+                      media: { payload: Buffer.from(response.delta, 'base64').toString('base64') }
+                  };
+                  connection.send(JSON.stringify(audioDelta));
+              }
+              if (response.type === 'response.audio_transcript.done') {
+                  console.log('AI:', response.transcript);//Get trancript of AI's response
+              }
+          } catch (error) {
+              console.error('Error processing OpenAI message:', error, 'Raw message:', data);
+          }
+      });
+      // Handle incoming messages from Twilio
+      connection.on('message', (message) => {
+          try {
+              const data = JSON.parse(message);
+              switch (data.event) {
+                  case 'media':
+                      if (openAiWs.readyState === WebSocket.OPEN) {
+                          const audioAppend = {
+                              type: 'input_audio_buffer.append',
+                              audio: data.media.payload
+                          };
+                          openAiWs.send(JSON.stringify(audioAppend));
+                      }
+                      break;
+                  case 'start':
+                      streamSid = data.start.streamSid;
+                      console.log('Incoming stream has started', streamSid);
+                      break;
+                  default:
+                      console.log('Received non-media event:', data.event);//here would handle other responses
+                      break;
+              }
+          } catch (error) {
+              console.error('Error parsing message:', error, 'Message:', message);
+          }
+      });
+      // Handle connection close
+      connection.on('close', () => {
+          const urlParams = new URLSearchParams(req.url.split('?')[1]);
+          const callSid = urlParams.get('callSid');
+          activeCallInstructions.delete(callSid);
+          if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
+          console.log('Client disconnected.');
+      });
+      // Handle WebSocket close and errors
+      openAiWs.on('close', () => {
+          console.log('Disconnected from the OpenAI Realtime API');
+      });
+      openAiWs.on('error', (error) => {
+          console.error('Error in the OpenAI WebSocket:', error);
+      });
+  });
+});
+
 // Endpoint to handle audio data from Twilio
 fastify.post('/api/audio-chunk', async (request, reply) => {
   const { callId, audioData } = request.body;
