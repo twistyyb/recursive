@@ -16,22 +16,6 @@ const Title = styled.h1`
   margin-bottom: 1rem;
 `
 
-const Form = styled.form`
-  margin-bottom: 1.5rem;
-`
-
-const InputGroup = styled.div`
-  display: flex;
-  gap: 0.5rem;
-`
-
-const Input = styled.input`
-  flex: 1;
-  padding: 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-`
-
 const Button = styled.button`
   background-color: #3b82f6;
   color: white;
@@ -46,69 +30,13 @@ const Button = styled.button`
 
   &:disabled {
     opacity: 0.7;
-    cursor: not-allowed;
   }
 `
-
-const QuestionsList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-`
-
-const QuestionItem = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.375rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-`
-
-const QuestionContent = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+const Input = styled.input`
   flex: 1;
-`
-
-const QuestionNumber = styled.span`
-  font-weight: bold;
-  min-width: 2rem;
-  text-align: right;
-  font-size: 1.125rem;
-`
-
-const QuestionText = styled.span`
-  font-size: 1.125rem;
-`
-
-const ButtonGroup = styled.div`
-  display: flex;
-  gap: 0.25rem;
-  margin-left: 1rem;
-`
-
-const IconButton = styled.button<{ $isDisabled?: boolean }>`
-  padding: 4px 8px;
-  color: ${props => props.$isDisabled ? '#9ca3af' : '#3b82f6'};
-  cursor: ${props => props.$isDisabled ? 'not-allowed' : 'pointer'};
-
-  &:hover {
-    color: ${props => props.$isDisabled ? '#9ca3af' : '#2563eb'};
-  }
-`
-
-const DeleteButton = styled.button`
-  color: #ef4444;
-  padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
-
-  &:hover {
-    color: #dc2626;
-  }
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
 `
 
 const PhoneInput = styled(Input)<{ $isValid?: boolean }>`
@@ -148,41 +76,92 @@ const PhoneInputGroup = styled.div`
   width: 100%;
 `
 
-export function SurveyConfig() {
+const InputGroup = styled.div`
+  margin-bottom: 1rem;
+`
+
+const Label = styled.label`
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 0.5rem;
+`
+
+const TextArea = styled.textarea`
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  resize: vertical;
+  min-height: 100px;
+  box-sizing: border-box;
+  margin-right: 1rem;
+
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+`
+
+const SkillItem = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+`
+
+const DeleteButton = styled.button`
+  color: #ef4444;
+  padding: 0.25rem, 0.5rem;
+  background: white;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 1rem;
+
+  &:hover:not(:disabled) {
+    color:rgb(168, 29, 29);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    border-color: #9ca3af;
+    color: #9ca3af;
+  }
+`
+
+const AddButton = styled.button`
+  color: #9ca3af;
+  padding: 0.1rem 0.1rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1.5rem;
+  width: 100%;
+  text-align: center;
+  padding-left: 0.5rem;
+
+  &:hover {
+    color: #374151;
+  }
+`
+
+const RequiredStar = styled.span`
+  color: #ff4444;
+  margin-left: 4px;
+`;
+
+export function AiConfig() {
   const [callStatus, setCallStatus] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState('')
   const [validatedPhone, setValidatedPhone] = useState<PhoneResult | null>(phone('7473347145'))
   const [isCallActive, setIsCallActive] = useState(false)
   const [callSid, setCallSid] = useState<string | null>(null)
-  const [questions, setQuestions] = useState<string[]>([]);
-  const [newQuestion, setNewQuestion] = useState('');
-
-  const handleAddQuestion = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newQuestion.trim()) {
-      const updatedQuestions = [...questions, newQuestion.trim()];
-      setQuestions(updatedQuestions);
-      setNewQuestion('');
-      console.log(updatedQuestions);
-    }
-  };
-
-  const handleRemoveQuestion = (index: number) => {
-    const updatedQuestions = questions.filter((_, i) => i !== index);
-    setQuestions(updatedQuestions);
-    console.log(updatedQuestions);
-  };
-
-  const handleMoveQuestion = (index: number, direction: 'up' | 'down') => {
-    const newQuestions = [...questions];
-    if (direction === 'up' && index > 0) {
-      [newQuestions[index], newQuestions[index - 1]] = [newQuestions[index - 1], newQuestions[index]];
-    } else if (direction === 'down' && index < questions.length - 1) {
-      [newQuestions[index], newQuestions[index + 1]] = [newQuestions[index + 1], newQuestions[index]];
-    }
-    setQuestions(newQuestions);
-  };
+  const [companyName, setCompanyName] = useState('')
+  const [jobTitle, setJobTitle] = useState('')
+  const [targetSkillsQualities, setTargetSkillsQualities] = useState<string[]>([''])
+  const [additionalInstructions, setAdditionalInstructions] = useState('')
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target.value
@@ -200,28 +179,30 @@ export function SurveyConfig() {
     try {
       console.log('Making POST request to create call:', {
         phone: number,
-        survey: questions,
-        endpoint: 'http://localhost:3000/api/create-call'
+        companyName: 'Cafe Strada',
+        endpoint: 'http://localhost:3000/api/initiate-call'
       });
-      const response = await fetch('http://localhost:3000/api/create-call', {
+      const response = await fetch('http://localhost:3000/api/initiate-call', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          phone: number,
-          survey: questions,
+          phoneNumber: number,
+          companyName: companyName,
+          jobTitle: jobTitle,
+          targetSkillsQualities: targetSkillsQualities,
+          additionalInstructions: additionalInstructions,
         })
       })
      
-
       const data = await response.json()
      
       if (data.success) {
-        setCallStatus(`Call created successfully! SID: ${data.callId}`)
+        setCallStatus(`Call created successfully! SID: ${data.callSid}`)
         setIsCallActive(true)
-        setCallSid(data.callId)
-        console.log('Call created:', data.callId)
+        setCallSid(data.callSid)
+        console.log('Call created:', data.callSid)
       } else {
         setCallStatus(`Failed to create call: ${data.error}`)
         console.error('Call creation failed:', data.error)
@@ -285,56 +266,96 @@ export function SurveyConfig() {
     };
   }, [isCallActive, callSid]);
 
+  const handleAddSkill = () => {
+    setTargetSkillsQualities([...targetSkillsQualities, '']);
+  };
+
+  const handleRemoveSkill = (index: number) => {
+    if (targetSkillsQualities.length === 1) {
+      // If it's the last item, clear it instead of removing
+      setTargetSkillsQualities(['']);
+    } else {
+      // Otherwise remove the item
+      const newSkills = targetSkillsQualities.filter((_, i) => i !== index);
+      setTargetSkillsQualities(newSkills);
+    }
+  };
+
+  const handleSkillChange = (index: number, value: string) => {
+    const newSkills = [...targetSkillsQualities];
+    newSkills[index] = value;
+    setTargetSkillsQualities(newSkills);
+  };
+
+  const isFormValid = () => {
+    return companyName.trim() !== '' && 
+           jobTitle.trim() !== '' && 
+           validatedPhone?.isValid;
+  };
 
   return (
     <Container>
-      <Title>Manual Interview Configuration</Title>
-      
-      <Form onSubmit={handleAddQuestion}>
+      <Title>AI Interview Configuration</Title>
+
+      <div className="space-y-4 p-4">
         <InputGroup>
+          <Label>
+            Company Name
+            <RequiredStar>*</RequiredStar>
+          </Label>
           <Input
             type="text"
-            value={newQuestion}
-            onChange={(e) => setNewQuestion(e.target.value)}
-            placeholder="Enter a survey question..."
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            placeholder="Enter company name"
           />
-          <Button type="submit">
-            Add Question
-          </Button>
         </InputGroup>
-      </Form>
 
-      <QuestionsList>
-        {questions.map((question, index) => (
-          <QuestionItem key={index}>
-            <QuestionContent>
-              <QuestionNumber>{index + 1}.</QuestionNumber>
-              <QuestionText>{question}</QuestionText>
-            </QuestionContent>
-            <ButtonGroup>
-              <IconButton
-                onClick={() => handleMoveQuestion(index, 'up')}
-                $isDisabled={index === 0}
-                disabled={index === 0}
+        <InputGroup>
+          <Label>
+            Job Title
+            <RequiredStar>*</RequiredStar>
+          </Label>
+          <Input
+            type="text"
+            value={jobTitle}
+            onChange={(e) => setJobTitle(e.target.value)}
+            placeholder="Enter job title"
+          />
+        </InputGroup>
+
+        <InputGroup>
+          <Label>Target Skills & Qualities</Label>
+          {targetSkillsQualities.map((skill, index) => (
+            <SkillItem key={index}>
+              <Input
+                type="text"
+                value={skill}
+                onChange={(e) => handleSkillChange(index, e.target.value)}
+                placeholder="Enter skill or quality"
+              />
+              <DeleteButton
+                onClick={() => handleRemoveSkill(index)}
+                disabled={targetSkillsQualities.length === 1 && targetSkillsQualities[0] === ''}
               >
-                ↑
-              </IconButton>
-              <IconButton
-                onClick={() => handleMoveQuestion(index, 'down')}
-                $isDisabled={index === questions.length - 1}
-                disabled={index === questions.length - 1}
-              >
-                ↓
-              </IconButton>
-              <DeleteButton onClick={() => handleRemoveQuestion(index)}>
                 ✕
               </DeleteButton>
-            </ButtonGroup>
-          </QuestionItem>
-        ))}
-      </QuestionsList>
+            </SkillItem>
+          ))}
+          <AddButton onClick={handleAddSkill}>
+            +
+          </AddButton>
+        </InputGroup>
 
-      <PhoneInputGroup>
+        <InputGroup>
+          <Label>Additional Instructions</Label>
+          <TextArea
+            value={additionalInstructions}
+            onChange={(e) => setAdditionalInstructions(e.target.value)}
+            placeholder="Enter any additional instructions for the AI interviewer"
+          />
+        </InputGroup>
+        <PhoneInputGroup>
         <PhoneInput
           type="tel"
           value={phoneNumber}
@@ -344,13 +365,12 @@ export function SurveyConfig() {
         />
         <CallButton
           onClick={() => validatedPhone?.isValid ? handleCreateCall(validatedPhone.phoneNumber) : undefined}
-          disabled={isLoading || !validatedPhone?.isValid}
+          disabled={isLoading || !isFormValid()}
         >
           {isLoading ? 'Creating Call...' : `Start Interview Call`}
         </CallButton>
-      </PhoneInputGroup>
         
-
+      </PhoneInputGroup>
       {!validatedPhone?.isValid && phoneNumber && (
         <ErrorMessage>
           Please enter a valid phone number with country code (e.g. +1234567890)
@@ -361,6 +381,14 @@ export function SurveyConfig() {
           {callStatus}
         </StatusMessage>
       )}
+      {!isFormValid() && (
+        <ErrorMessage>
+          {!companyName.trim() && 'Company name is required. '}
+          {!jobTitle.trim() && 'Job title is required. '}
+          {!validatedPhone?.isValid && phoneNumber && 'Please enter a valid phone number with country code (e.g. +1234567890)'}
+        </ErrorMessage>
+      )}
+      </div>
 
     </Container>
   );

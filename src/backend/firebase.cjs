@@ -24,7 +24,7 @@ try {
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    
+
     console.log('Firebase initialized successfully');  // Debug log
     
     module.exports = {
@@ -40,9 +40,11 @@ try {
         updateDoc,
         getDoc,
         deleteDoc,
-        app
+        app,
+        auth
     };
 } catch (error) {
     console.error('Firebase initialization error:', error);
     throw error;
 }
+

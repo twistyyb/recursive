@@ -50,7 +50,7 @@ app.post('/voice', async (req, res) => {
     res.send(twiml.toString());
   }
 
-  // Call the advanceSurvey function with the responseId
+  // Call the advanceSurvey function with the responseId, ask questions, and record responses
   SurveyResponse.advanceSurvey({
     responseId: responseId,
     input: input,
@@ -111,7 +111,7 @@ console.log("Server is running on port 3000");
 // Store call statuses in memory (consider using a database for production)
 const callStatuses = new Map();
 
-// Create call endpoint
+// Create call endpoint for prompted interview call, survey seed questions, and create survey response
 app.post('/api/create-call', async (req, res) => {
   try {
     const phone = req.body.phone;
@@ -238,7 +238,7 @@ app.get('/api/survey-responses', async (req, res) => {
   }
 });
 
-// Add new DELETE endpoint
+// delete a survey response
 app.delete('/api/delete-response', async (req, res) => {
   try {
     const { responseId } = req.body;

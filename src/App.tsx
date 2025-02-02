@@ -1,32 +1,36 @@
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
 import './index.css'
+import styled from 'styled-components'
+import { AiConfig } from './components/aiConfig'
+import Login from './components/Login';
 
-import { SurveyConfig } from './components/surveyConfig'
-import { ResponseDisplay } from './components/ResponseDisplay'
+const Title = styled.h1`
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-weight: 700;
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+`;
+
+const Subtitle = styled.p`
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-style: italic;
+  font-size: 0.875rem;
+  font-weight: 900;
+  color: #6b7280;
+  margin-top: 0;
+`;
 
 function App() {
   return (
     <>
-      <div>
-        <a href="https://vitejs.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>AI Interview System</h1>
-      <p className="read-the-docs">
+      <Login />
+      <Title>AI Interview System</Title>
+      <Subtitle>
         A 72 hour hackathon project by Bryan Huang
-      </p>
-      
-      <SurveyConfig />
-      <ResponseDisplay />
-      
+      </Subtitle>
+      <AiConfig />
     </>
   )
 }
 
-export default App
+export default App;
