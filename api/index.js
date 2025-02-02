@@ -236,19 +236,10 @@ fastify.all('/api/incoming-call', async (request, reply) => {
 // Media Stream
 fastify.register(async (fastify) => {
   fastify.get('/api/media-stream/:callId', { websocket: true }, (connection, req) => {
-      const callId = req.params.callId;
-      if (!callId) {
-        console.error('No callId found');
-        connection.socket.close();
-        return;
-      }
+      const urlPath = req.url;
+      const callId = urlPath.split('media-stream/')[1]?.split('?')[0];
 
       const instruction = activeCallInstructions.get(callId);
-      if (!instruction) {
-          console.error('No instruction found for callId:', callId);
-          connection.socket.close();
-          return;
-      }
 
       console.log('Client connected');
       const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
