@@ -63,7 +63,10 @@ const safePusherTrigger = async (channel, event, data) => {
   }
 };
 
-const fastify = Fastify();
+const fastify = Fastify({ logger: true });
+const callStatuses = new Map(); // Add this to store call statuses
+
+// Register plugins
 fastify.register(fastifyFormBody);
 fastify.register(fastifyCors, {
   origin: [
@@ -78,7 +81,6 @@ fastify.register(fastifyCors, {
 
 // Maintain state
 const activeCallInstructions = new Map();
-const callStatuses = new Map();
 const openAIConnections = new Map();
 
 // Handle OpenAI WebSocket connection
@@ -232,66 +234,67 @@ fastify.post('/api/call-ended', async (request, reply) => {
   reply.send({ success: true });
 });
 
-// Add status callback endpoint
+// Add status callback endpoints
 fastify.post('/api/status-callback', async (request, reply) => {
   try {
     const { CallSid, CallStatus } = request.body;
-    debugLog('Received status callback:', { CallSid, CallStatus });
     
     if (!CallSid || !CallStatus) {
-      return reply.code(400).send({ 
-        error: 'Missing required fields',
-        details: 'CallSid and CallStatus are required'
-      });
+      console.error('Missing required fields in Twilio callback:', request.body);
+      return reply.code(400).send({ error: 'CallSid and CallStatus are required' });
     }
     
     callStatuses.set(CallSid, CallStatus);
+    console.log(`Call ${CallSid} status updated to: ${CallStatus}`);
+    
     return reply.code(200).send();
   } catch (error) {
-    debugLog('Status callback error:', {
-      error: error.message,
-      stack: error.stack
-    });
+    console.error('Error in status-callback POST:', error);
     return reply.code(500).send({ error: 'Internal server error' });
   }
 });
 
-fastify.get('/api/health', async (request, reply) => {
+fastify.get('/api/status-callback', async (request, reply) => {
   try {
-    // Basic API health check
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      mode: 'serverless'
-    };
+    const { callSid } = request.query;
+    
+    if (!callSid) {
+      console.error('Missing callSid in GET request');
+      return reply.code(400).send({ error: 'CallSid is required' });
+    }
+
+    const status = callStatuses.get(callSid);
+    
+    if (!status) {
+      console.log(`No status found for callSid: ${callSid}`);
+      return reply.code(404).send({ error: 'Call status not found' });
+    }
+
+    return reply.send({ status });
   } catch (error) {
-    console.error('Health check failed:', error);
-    reply.code(500).send({ 
-      status: 'error',
-      error: error.message 
-    });
+    console.error('Error in status-callback GET:', error);
+    return reply.code(500).send({ error: 'Internal server error' });
   }
 });
 
-// Add after the fastify initialization
+// Add a health check endpoint
+fastify.get('/api/health', async (request, reply) => {
+  return { status: 'ok' };
+});
+
+// Start the server
 const start = async () => {
   try {
-    await fastify.listen({ 
-      port: process.env.PORT || 3000,
-      host: '0.0.0.0'
-    });
+    await fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
+    console.log(`Server listening on ${fastify.server.address().port}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
   }
 };
 
-// Only start the server if we're not in a Vercel serverless environment
-if (process.env.VERCEL !== '1') {
-  start();
-}
+start();
 
-// Export for serverless
 export default async (req, res) => {
   await fastify.ready();
   fastify.server.emit('request', req, res);
