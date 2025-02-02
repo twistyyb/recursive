@@ -1,90 +1,129 @@
+import WebSocket from 'ws';
+import dotenv from 'dotenv';
 import Fastify from 'fastify';
 import fastifyFormBody from '@fastify/formbody';
+import fastifyWs from '@fastify/websocket';
 import fastifyCors from '@fastify/cors';
-import dotenv from 'dotenv';
-import twilio from 'twilio';
-import { openai } from '@ai-sdk/openai';
-import { createDataStream } from 'ai';
+import Pusher from 'pusher';
 
 dotenv.config();
 
-// Add after dotenv.config()
-const requiredEnvVars = {
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
-  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
-  SERVER_URL: process.env.SERVER_URL,
-  VITE_FRONTEND_URL: process.env.VITE_FRONTEND_URL
-};
+const {OPENAI_API_KEY} = process.env;
+if( !OPENAI_API_KEY) {
+  console.error('OPENAI_API_KEY is not set');
+  process.exit(1);
+}
+
 
 const fastify = Fastify();
-const callStatuses = new Map(); // Add this to store call statuses
-
-// Middleware to log incoming requests
-fastify.addHook('onRequest', (request, reply, done) => {
-  console.log(`Incoming request: ${request.method} ${request.url}`);
-  done();
-});
-
-// Register plugins
 fastify.register(fastifyFormBody);
+fastify.register(fastifyWs);
 fastify.register(fastifyCors, {
   origin: [
     process.env.VITE_FRONTEND_URL,
     'https://accounts.google.com',
-    'https://www.googleapis.com',
+    'https://www.googleapis.com'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization'],
 });
 
-// Maintain state
-const activeCallInstructions = new Map();
+// Update security headers
+fastify.addHook('onRequest', async (request, reply) => {
+  // Remove COOP header to allow popups
+  reply.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  // Remove COEP header to allow cross-origin resources
+  reply.header('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  // Allow cross-origin iframes
+  reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  
+  // Standard CORS headers
+  reply.header('Access-Control-Allow-Origin', request.headers.origin || process.env.VITE_FRONTEND_URL);
+  reply.header('Access-Control-Allow-Credentials', 'true');
+  reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  
+  // Additional security headers
+  reply.header('X-Frame-Options', 'SAMEORIGIN');
+  reply.header('X-Content-Type-Options', 'nosniff');
+  
+  // Handle preflight requests
+  if (request.method === 'OPTIONS') {
+    return reply.send();
+  }
+});
 
-// Add after environment variables
+const SYSTEM_MESSAGE = 'You are a kind but professional AI interviewer. You are interviewing a potential employee for a job. The company is looking for a part time barista. ask nessecary questions to determine if they are a good fit for the role. Always stay positive. Please start the conversation by introducing yourself. Speak as soon as you are connected to the call.'
 const VOICE = 'alloy';
+const PORT = process.env.PORT || 3000;
 
-// Add after VOICE definition
 const LOG_EVENT_TYPES = [
-  'session.updated',
-  'conversation.item.input_audio_transcription.completed',
-  'response.audio_transcript.done'
+  'response.content.done',
+  'rate_limits.updated',
+  'response.done',
+  'input_audio_buffer.committed',
+  'input_audio_buffer.speech_stopped',
+  'input_audio_buffer.speech_started',
+  'session.created'
 ];
 
-// Modified initiate-call endpoint
+const activeCallInstructions = new Map();
+const callStatuses = new Map();
+
+fastify.get('/', async (request, reply) => {
+  reply.send({message: 'Twilio Media Stream Server is running!'})
+});
+
+import twilio from 'twilio';
 fastify.post('/api/initiate-call', async (request, reply) => {
   try {
-    
-    const { companyName, phoneNumber, jobTitle, targetSkillsQualities, additionalInstructions } = request.body;
-    const callId = new Date().toISOString();
-
-    let instruction = `Your name is Nava, you are a kind but professional AI interviewer at the company ${companyName}...`; // Your existing instruction string
-
-    activeCallInstructions.set(callId, instruction);
-
-    // Create Twilio call
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioClient = twilio(accountSid, authToken);
+    const companyName = request.body.companyName;
+    const phoneNumber = request.body.phoneNumber;
+    const jobTitle = request.body.jobTitle;
+    const targetSkillsQualities = request.body.targetSkillsQualities;
+    const additionalInstructions = request.body.additionalInstructions;
+    const callId = new Date().toISOString();
 
-    // Create Twilio call with enhanced error handling
-    let call; // Declare call variable in the outer scope
-    try {
-      call = await twilioClient.calls.create({
-        to: phoneNumber,
-        from: "+18445417040",
-        url: `${process.env.SERVER_URL}/api/incoming-call?callId=${callId}`,
-        record: true,
-        statusCallback: process.env.SERVER_URL + "/api/status-callback",
-        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'failed', 'busy', 'no-answer'],
-        statusCallbackMethod: 'POST'
-      });
-    } catch (twilioError) {
-      throw twilioError;
-    }
 
+
+    let instruction = `Your name is Nava, you are a kind but professional AI interviewer at the company ${companyName}. You are interviewing a potential employee for a job. Ask nessecary questions to determine if they are a good fit for the role. Always stay positive. Please start the conversation by introducing yourself. Be slightly briefer in your analysis of the candidate's response. Ask one question at a time, and follow up if a detail needs to be clarified. The following is information provided by the hiring manager, you should ask questions accordingly.${
+      jobTitle ? ` Job Title: ${jobTitle}.` : ''
+    }${
+      targetSkillsQualities.every(skill => skill.length == 0) ? 
+        '' : 
+        ` Target Skills and Qualities: ${targetSkillsQualities.filter(skill => skill.length > 0).join(', ')}.`
+    }${
+      additionalInstructions?.trim() ? 
+        ` Additional Instructions: ${additionalInstructions}.` : 
+        ''
+    }`
+
+    console.log('parsed instruction:', instruction);
+    activeCallInstructions.set(callId, instruction);
+    
+
+    const call = await twilioClient.calls.create({
+      to: phoneNumber,
+      from: "+18445417040",
+      url: `${process.env.SERVER_URL}/api/incoming-call?callId=${callId}`,
+      record: true,
+      statusCallback: process.env.SERVER_URL + "/api/status-callback",
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'failed', 'busy', 'no-answer'],
+      statusCallbackMethod: 'POST'
+    });
+    // Set initial status
     callStatuses.set(call.sid, 'initiated');
+
+    // Trigger Pusher event
+    await safePusherTrigger('calls', 'call-created', {
+      callSid: call.sid,
+      status: 'initiated',
+      timestamp: new Date().toISOString()
+    });
 
     reply.send({
       success: true,
@@ -92,189 +131,145 @@ fastify.post('/api/initiate-call', async (request, reply) => {
       message: 'Call initiated successfully'
     });
   } catch (error) {
+    console.error('Error initiating call:', error);
     reply.code(500).send({ 
-      error: 'Failed to initiate call', 
-      details: error.message,
-      timestamp: new Date().toISOString()
+      error: 'Failed to initiate call',
+      details: error.message 
     });
   }
 });
 
 fastify.all('/api/incoming-call', async (request, reply) => {
   const callId = request.query.callId || request.body.callId;
-  const serverUrl = process.env.VERCEL_URL || process.env.SERVER_URL;
-  console.log("incoming-call callId:", callId)
-  // Ensure we're using https for the stream URL
-  const streamUrl = `${serverUrl}/api/media-stream?callId=${callId}`;
-  console.log("/api/incoming-call streamUrl", streamUrl)
-
 
   const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
     <Response>
-      <Say>Connecting you to the interviewer...</Say>
       <Connect>
-        <Stream url="${streamUrl}">
-        </Stream>
+        <Stream url="wss://${request.headers.host}/api/media-stream/${callId}" />
       </Connect>
     </Response>`;
 
   reply.type('text/xml').send(twimlResponse);
 });
 
-// Change from POST to handle both GET and POST
-fastify.route({
-  method: ['GET', 'POST'],
-  url: '/api/media-stream',
-  handler: async (request, reply) => {
-    try {
-      const callId = request.params.callId || request.query.callId || request.body.callId || request.body.parameters.callId;
-      const { event, media, start, parameters } = request.body || {};
-      
-      const streamCallId = parameters?.callId || callId;
-      console.log('Stream parameters:', parameters);
-      console.log('Using callId:', streamCallId);
-      
-      const dataStream = createDataStream({
-        execute: async dataStreamWriter => {
-          try {
-            const instruction = activeCallInstructions.get(streamCallId);
-            let openaiConnection = null;
+// WebSocket route for media-stream
+fastify.register(async (fastify) => {
+  fastify.get('/api/media-stream/:callId', { websocket: true }, (connection, req) => {
+    console.log('media-stream route hit');
+    console.log('req:', req);
+    
+    // Extract callId from URL path
+    const urlPath = req.url;
+    const callId = urlPath.split('media-stream/')[1]?.split('?')[0];
 
-            if (event === 'start') {
-              console.log('Starting stream with instruction:', instruction);
-              
-              // Write initial session data
-              dataStreamWriter.writeData({
-                type: 'session.started',
-                streamSid: start.streamSid,
-                timestamp: new Date().toISOString()
-              });
+    const instruction = activeCallInstructions.get(callId);
 
-              // Send initial session configuration through dataStream
-              dataStreamWriter.writeData({
-                type: 'session.update',
-                session: {
-                  turn_detection: { type: 'server_vad' },
-                  input_audio_format: 'g711_ulaw',
-                  output_audio_format: 'g711_ulaw',
-                  voice: VOICE,
-                  instructions: instruction,
-                  modalities: ["text", "audio"],
-                  temperature: 0.8,
-                  input_audio_transcription: {'model': 'whisper-1'},
-                }
-              });
+    console.log('Client connected');
+    const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
+        headers: {
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
+            "OpenAI-Beta": "realtime=v1"
+        }
+    });
+    let streamSid = null;
+    const sendSessionUpdate = () => {
+        
+        console.log('session update with instruction:', instruction);
+        const sessionUpdate = {
+            type: 'session.update',
+            session: {
+                turn_detection: { type: 'server_vad' },
+                input_audio_format: 'g711_ulaw',
+                output_audio_format: 'g711_ulaw',
+                voice: VOICE,
+                instructions: instruction,
+                modalities: ["text", "audio"],
+                temperature: 0.8,//randomness,
+                input_audio_transcription: {'model': 'whisper-1'},
             }
+        };
+        openAiWs.send(JSON.stringify(sessionUpdate));
+    };
+    // Open event for OpenAI WebSocket
+    openAiWs.on('open', () => {
+        console.log('Connected to the OpenAI Realtime API');
+        setTimeout(sendSessionUpdate, 250); // Ensure connection stability, send after .25 seconds
+    });
+    // Listen for messages from the OpenAI WebSocket (and send to Twilio if necessary)
 
-            if (event === 'media' && media?.payload) {
-              // Process audio through OpenAI
-              const openaiResponse = await openai.audio.realtime.process({
-                model: 'gpt-4o-realtime-preview-2024-10-01',
-                audio: media.payload,
-                headers: {
-                  Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-                  'OpenAI-Beta': 'realtime=v1'
-                }
-              });
-
-              // Handle OpenAI response chunks
-              for await (const chunk of openaiResponse) {
-                if (LOG_EVENT_TYPES.includes(chunk.type)) {
-                  console.log(`Received event: ${chunk.type}`);
-                }
-
-                switch (chunk.type) {
-                  case 'session.updated':
-                    console.log('Session updated successfully');
-                    break;
-
-                  case 'response.audio.delta':
-                    if (chunk.delta) {
-                      const audioDelta = {
-                        event: 'media',
-                        streamSid: start.streamSid,
-                        media: { payload: Buffer.from(chunk.delta, 'base64').toString('base64') }
-                      };
-                      dataStreamWriter.writeData(audioDelta);
+    openAiWs.on('message', (data) => {
+        try {
+            const response = JSON.parse(data);
+            if (LOG_EVENT_TYPES.includes(response.type)) {
+                //console.log(`Received event: ${response.type}`);
+            }
+            if (response.type === 'session.updated') {
+                //console.log('Session updated successfully');
+            }
+            if (response.type === 'conversation.item.input_audio_transcription.completed') {
+                console.log('User:', response.transcript);
+            }
+            if (response.type === 'response.audio.delta' && response.delta) {
+                const audioDelta = {
+                    event: 'media',
+                    streamSid: streamSid,
+                    media: { payload: Buffer.from(response.delta, 'base64').toString('base64') }
+                };
+                connection.send(JSON.stringify(audioDelta));
+            }
+            if (response.type === 'response.audio_transcript.done') {
+                console.log('AI:', response.transcript);//Get trancript of AI's response
+            }
+        } catch (error) {
+            console.error('Error processing OpenAI message:', error, 'Raw message:', data);
+        }
+    });
+    // Handle incoming messages from Twilio
+    connection.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            switch (data.event) {
+                case 'media':
+                    if (openAiWs.readyState === WebSocket.OPEN) {
+                        const audioAppend = {
+                            type: 'input_audio_buffer.append',
+                            audio: data.media.payload
+                        };
+                        openAiWs.send(JSON.stringify(audioAppend));
                     }
                     break;
-
-                  case 'conversation.item.input_audio_transcription.completed':
-                    console.log('User:', chunk.transcript);
-                    dataStreamWriter.writeData({
-                      type: 'transcription',
-                      speaker: 'User',
-                      text: chunk.transcript
-                    });
+                case 'start':
+                    streamSid = data.start.streamSid;
+                    console.log('Incoming stream has started', streamSid);
                     break;
-
-                  case 'response.audio_transcript.done':
-                    console.log('AI:', chunk.transcript);
-                    dataStreamWriter.writeData({
-                      type: 'transcription',
-                      speaker: 'AI',
-                      text: chunk.transcript
-                    });
+                default:
+                    console.log('Received non-media event:', data.event);//here would handle other responses
                     break;
-
-                  case 'input_audio_buffer.committed':
-                  case 'input_audio_buffer.speech_started':
-                  case 'input_audio_buffer.speech_stopped':
-                    dataStreamWriter.writeData({
-                      type: chunk.type,
-                      timestamp: new Date().toISOString()
-                    });
-                    break;
-
-                  case 'response.content.done':
-                  case 'response.done':
-                    dataStreamWriter.writeData({
-                      type: chunk.type,
-                      timestamp: new Date().toISOString()
-                    });
-                    break;
-
-                  case 'rate_limits.updated':
-                    console.log('Rate limits updated:', chunk);
-                    break;
-                }
-              }
             }
-
-            // Handle connection close
-            openaiConnection?.on('close', () => {
-              console.log('OpenAI connection closed');
-              activeCallInstructions.delete(streamCallId);
-            });
-
-          } catch (error) {
-            console.error('Error in stream execution:', error);
-            throw error;
-          }
-        },
-        onError: error => {
-          console.error('Stream error:', error);
-          if (streamCallId) {
-            activeCallInstructions.delete(streamCallId);
-          }
-          return error instanceof Error ? error.message : String(error);
-        },
-      });
-
-      reply.header('X-Vercel-AI-Data-Stream', 'v1');
-      reply.header('Content-Type', 'text/plain; charset=utf-8');
-      return reply.send(dataStream);
-    } catch (error) {
-      console.error('Error in media-stream:', error);
-      reply.code(500).send({ 
-        success: false, 
-        error: error.message 
-      });
-    }
-  }
+        } catch (error) {
+            console.error('Error parsing message:', error, 'Message:', message);
+        }
+    });
+    // Handle connection close
+    connection.on('close', () => {
+        const urlParams = new URLSearchParams(req.url.split('?')[1]);
+        const callSid = urlParams.get('callSid');
+        activeCallInstructions.delete(callSid);
+        if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
+        console.log('Client disconnected.');
+    });
+    // Handle WebSocket close and errors
+    openAiWs.on('close', () => {
+        console.log('Disconnected from the OpenAI Realtime API');
+    });
+    openAiWs.on('error', (error) => {
+        console.error('Error in the OpenAI WebSocket:', error);
+    });
+  });
 });
 
-// Add status callback endpoints
+
+// Handle Twilio's POST status callbacks
 fastify.post('/api/status-callback', async (request, reply) => {
   try {
     const { CallSid, CallStatus } = request.body;
@@ -284,6 +279,7 @@ fastify.post('/api/status-callback', async (request, reply) => {
       return reply.code(400).send({ error: 'CallSid and CallStatus are required' });
     }
     
+    // Store the status
     callStatuses.set(CallSid, CallStatus);
     console.log(`Call ${CallSid} status updated to: ${CallStatus}`);
     
@@ -294,6 +290,7 @@ fastify.post('/api/status-callback', async (request, reply) => {
   }
 });
 
+// Handle frontend GET status requests
 fastify.get('/api/status-callback', async (request, reply) => {
   try {
     const { callSid } = request.query;
@@ -317,25 +314,74 @@ fastify.get('/api/status-callback', async (request, reply) => {
   }
 });
 
-// Add a health check endpoint
-fastify.get('/api/health', async (request, reply) => {
-  return { status: 'ok' };
+// Update the verify endpoint to handle the request properly
+fastify.post('/api/auth/verify', async (request, reply) => {
+  try {
+    const { token, user } = request.body;
+    
+    if (!token || !user) {
+      console.log('Missing data:', { token: !!token, user: !!user });
+      return reply.code(400).send({ 
+        success: false, 
+        error: 'Token and user data are required' 
+      });
+    }
+
+    // Log the received data
+    console.log('Received verification request:', {
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName
+    });
+
+    // For now, we'll just verify that we received the data
+    return reply.send({
+      success: true,
+      user: {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL
+      }
+    });
+  } catch (error) {
+    console.error('Error in /api/auth/verify:', error);
+    return reply.code(500).send({ 
+      success: false, 
+      error: error.message || 'Verification failed' 
+    });
+  }
 });
 
-// Start the server
-const start = async () => {
+const pusher = new Pusher({
+  appId: process.env.PUSHER_APP_ID,
+  key: process.env.PUSHER_KEY,
+  secret: process.env.PUSHER_SECRET,
+  cluster: process.env.PUSHER_CLUSTER,
+  useTLS: true
+});
+
+// Helper function for Pusher events
+const safePusherTrigger = async (channel, event, data) => {
   try {
-    await fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
-    console.log(`Server listening on ${fastify.server.address().port}`);
-  } catch (err) {
-    fastify.log.error(err);
-    process.exit(1);
+    await pusher.trigger(channel, event, data);
+    console.log(`Pusher event sent: ${event}`, { channel, data });
+  } catch (error) {
+    console.error(`Pusher trigger error for ${event}:`, {
+      error: error.message,
+      channel,
+      data
+    });
+    throw error;
   }
 };
 
-start();
+fastify.listen({ port: PORT }, (err) => {
+  if (err) {
 
-export default async function handler(req, res) {
-  await fastify.ready();
-  fastify.server.emit('request', req, res);
-}
+      console.error(err);
+      process.exit(1);
+  }
+  console.log(`Server is listening on port ${PORT}`);
+});
+
