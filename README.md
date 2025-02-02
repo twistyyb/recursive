@@ -11,6 +11,7 @@ This is a simple AI interview system that uses OpenAI's Realtime API to conduct 
 
 
 # Info
+all get and post calls MUST go through url/api/...
 
 index.html -> main.tsx -> App.tsx -> aiConfig.tsx & login.tsx
 

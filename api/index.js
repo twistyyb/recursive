@@ -108,7 +108,7 @@ fastify.post('/api/initiate-call', async (request, reply) => {
     const call = await twilioClient.calls.create({
       to: phoneNumber,
       from: "+18445417040",
-      url: `${process.env.SERVER_URL}/incoming-call?callId=${callId}`,
+      url: `${process.env.SERVER_URL}/api/incoming-call?callId=${callId}`,
       record: true,
       statusCallback: process.env.SERVER_URL + "/api/status-callback",
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'failed', 'busy', 'no-answer'],
@@ -132,14 +132,14 @@ fastify.post('/api/initiate-call', async (request, reply) => {
   }
 });
 
-fastify.all('/incoming-call', async (request, reply) => {
+fastify.all('/api/incoming-call', async (request, reply) => {
   const callId = request.query.callId || request.body.callId;
 
   const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
     <Response>
       <Say>You are now connected.</Say>
       <Connect>
-        <Stream url="wss://${request.headers.host}/media-stream/${callId}" />
+        <Stream url="wss://${request.headers.host}/api/media-stream/${callId}" />
       </Connect>
     </Response>`;
 
@@ -148,7 +148,7 @@ fastify.all('/incoming-call', async (request, reply) => {
 
 // WebSocket route for media-stream
 fastify.register(async (fastify) => {
-  fastify.get('/media-stream/:callId', { websocket: true }, (connection, req) => {
+  fastify.get('/api/media-stream/:callId', { websocket: true }, (connection, req) => {
       const callId = req.params.callId;
       if (!callId) {
         console.error('No callId found');
