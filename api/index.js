@@ -15,25 +15,38 @@ const debugLog = (message, data = null) => {
   if (data) console.log(JSON.stringify(data, null, 2));
 };
 
-// Initialize Pusher
-const pusher = new Pusher({
-  appId: process.env.PUSHER_APP_ID,
-  key: process.env.PUSHER_KEY,
-  secret: process.env.PUSHER_SECRET,
-  cluster: process.env.PUSHER_CLUSTER,
-  useTLS: true,
-  host: `api-${process.env.PUSHER_CLUSTER}.pusher.com`
-});
+// Add after dotenv.config()
+const requiredEnvVars = {
+  PUSHER_APP_ID: process.env.PUSHER_APP_ID,
+  PUSHER_KEY: process.env.PUSHER_KEY,
+  PUSHER_SECRET: process.env.PUSHER_SECRET,
+  PUSHER_CLUSTER: process.env.PUSHER_CLUSTER,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+  SERVER_URL: process.env.SERVER_URL,
+  VITE_FRONTEND_URL: process.env.VITE_FRONTEND_URL
+};
 
-// Update Pusher initialization
-if (!process.env.PUSHER_CLUSTER || !process.env.PUSHER_APP_ID || !process.env.PUSHER_KEY) {
-  debugLog('Missing Pusher configuration:', {
-    cluster: !!process.env.PUSHER_CLUSTER,
-    appId: !!process.env.PUSHER_APP_ID,
-    key: !!process.env.PUSHER_KEY
+const missingVars = Object.entries(requiredEnvVars)
+  .filter(([_, value]) => !value)
+  .map(([key]) => key);
+
+if (missingVars.length > 0) {
+  debugLog('Missing required environment variables:', {
+    missing: missingVars
   });
   process.exit(1);
 }
+
+// Initialize Pusher with validated environment variables
+const pusher = new Pusher({
+  appId: requiredEnvVars.PUSHER_APP_ID,
+  key: requiredEnvVars.PUSHER_KEY,
+  secret: requiredEnvVars.PUSHER_SECRET,
+  cluster: requiredEnvVars.PUSHER_CLUSTER,
+  useTLS: true
+});
 
 const fastify = Fastify();
 fastify.register(fastifyFormBody);
