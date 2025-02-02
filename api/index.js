@@ -224,6 +224,7 @@ fastify.all('/api/incoming-call', async (request, reply) => {
 
   const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
     <Response>
+      <Say>Connecting you to the interviewer...</Say>
       <Connect>
         <Stream url="wss://${request.headers.host}/api/media-stream/${callId}" />
       </Connect>
