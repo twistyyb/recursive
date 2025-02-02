@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "start": "node index.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -16,6 +17,7 @@
   "dependencies": {
     "@fastify/cors": "^10.0.2",
     "@fastify/formbody": "^8.0.2",
+    "@fastify/static": "^8.0.4",
     "@fastify/websocket": "^11.0.2",
     "@types/styled-components": "^5.1.34",
     "axios": "^1.7.9",
