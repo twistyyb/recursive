@@ -109,21 +109,6 @@ const connectToOpenAI = async (callId, instruction) => {
     debugLog(`OpenAI WebSocket closed for call ${callId}`);
   });
 
-  // Update Pusher trigger with error handling
-  const safePusherTrigger = async (channel, event, data) => {
-    try {
-      await pusher.trigger(channel, event, data);
-      debugLog(`Pusher event sent: ${event}`, { channel, data });
-    } catch (error) {
-      debugLog(`Pusher trigger error for ${event}:`, {
-        error: error.message,
-        channel,
-        data
-      });
-      throw error;
-    }
-  };
-
   openAiWs.on('message', (data) => {
     try {
       const response = JSON.parse(data);
@@ -226,7 +211,7 @@ fastify.all('/api/incoming-call', async (request, reply) => {
     <Response>
       <Say>Connecting you to the interviewer...</Say>
       <Connect>
-        <Stream url="wss://${request.headers.host}/api/media-stream/${callId}" />
+        <Stream url="wss://${request.headers.host}/api/media-stream/?callId=${callId}" />
       </Connect>
     </Response>`;
 
@@ -283,74 +268,74 @@ fastify.register(async (fastify) => {
     });
     // Listen for messages from the OpenAI WebSocket (and send to Twilio if necessary)
 
-    openAiWs.on('message', (data) => {
-        try {
-            const response = JSON.parse(data);
-            if (LOG_EVENT_TYPES.includes(response.type)) {
-                //console.log(`Received event: ${response.type}`);
-            }
-            if (response.type === 'session.updated') {
-                //console.log('Session updated successfully');
-            }
-            if (response.type === 'conversation.item.input_audio_transcription.completed') {
-                console.log('User:', response.transcript);
-            }
-            if (response.type === 'response.audio.delta' && response.delta) {
-                const audioDelta = {
-                    event: 'media',
-                    streamSid: streamSid,
-                    media: { payload: Buffer.from(response.delta, 'base64').toString('base64') }
-                };
-                connection.send(JSON.stringify(audioDelta));
-            }
-            if (response.type === 'response.audio_transcript.done') {
-                console.log('AI:', response.transcript);//Get trancript of AI's response
-            }
-        } catch (error) {
-            console.error('Error processing OpenAI message:', error, 'Raw message:', data);
-        }
-    });
-    // Handle incoming messages from Twilio
-    connection.on('message', (message) => {
-        try {
-            const data = JSON.parse(message);
-            switch (data.event) {
-                case 'media':
-                    if (openAiWs.readyState === WebSocket.OPEN) {
-                        const audioAppend = {
-                            type: 'input_audio_buffer.append',
-                            audio: data.media.payload
-                        };
-                        openAiWs.send(JSON.stringify(audioAppend));
-                    }
-                    break;
-                case 'start':
-                    streamSid = data.start.streamSid;
-                    console.log('Incoming stream has started', streamSid);
-                    break;
-                default:
-                    console.log('Received non-media event:', data.event);//here would handle other responses
-                    break;
-            }
-        } catch (error) {
-            console.error('Error parsing message:', error, 'Message:', message);
-        }
-    });
-    // Handle connection close
-    connection.on('close', () => {
-        const urlParams = new URLSearchParams(req.url.split('?')[1]);
-        const callSid = urlParams.get('callSid');
-        activeCallInstructions.delete(callSid);
-        if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
-        console.log('Client disconnected.');
-    });
-    // Handle WebSocket close and errors
-    openAiWs.on('close', () => {
-        console.log('Disconnected from the OpenAI Realtime API');
-    });
-    openAiWs.on('error', (error) => {
-        console.error('Error in the OpenAI WebSocket:', error);
-    });
+      openAiWs.on('message', (data) => {
+          try {
+              const response = JSON.parse(data);
+              if (LOG_EVENT_TYPES.includes(response.type)) {
+                  //console.log(`Received event: ${response.type}`);
+              }
+              if (response.type === 'session.updated') {
+                  //console.log('Session updated successfully');
+              }
+              if (response.type === 'conversation.item.input_audio_transcription.completed') {
+                  console.log('User:', response.transcript);
+              }
+              if (response.type === 'response.audio.delta' && response.delta) {
+                  const audioDelta = {
+                      event: 'media',
+                      streamSid: streamSid,
+                      media: { payload: Buffer.from(response.delta, 'base64').toString('base64') }
+                  };
+                  connection.send(JSON.stringify(audioDelta));
+              }
+              if (response.type === 'response.audio_transcript.done') {
+                  console.log('AI:', response.transcript);//Get trancript of AI's response
+              }
+          } catch (error) {
+              console.error('Error processing OpenAI message:', error, 'Raw message:', data);
+          }
+      });
+      // Handle incoming messages from Twilio
+      connection.on('message', (message) => {
+          try {
+              const data = JSON.parse(message);
+              switch (data.event) {
+                  case 'media':
+                      if (openAiWs.readyState === WebSocket.OPEN) {
+                          const audioAppend = {
+                              type: 'input_audio_buffer.append',
+                              audio: data.media.payload
+                          };
+                          openAiWs.send(JSON.stringify(audioAppend));
+                      }
+                      break;
+                  case 'start':
+                      streamSid = data.start.streamSid;
+                      console.log('Incoming stream has started', streamSid);
+                      break;
+                  default:
+                      console.log('Received non-media event:', data.event);//here would handle other responses
+                      break;
+              }
+          } catch (error) {
+              console.error('Error parsing message:', error, 'Message:', message);
+          }
+      });
+      // Handle connection close
+      connection.on('close', () => {
+          const urlParams = new URLSearchParams(req.url.split('?')[1]);
+          const callSid = urlParams.get('callSid');
+          activeCallInstructions.delete(callSid);
+          if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
+          console.log('Client disconnected.');
+      });
+      // Handle WebSocket close and errors
+      openAiWs.on('close', () => {
+          console.log('Disconnected from the OpenAI Realtime API');
+      });
+      openAiWs.on('error', (error) => {
+          console.error('Error in the OpenAI WebSocket:', error);
+      });
   });
 });
 
