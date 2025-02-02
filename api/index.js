@@ -9,13 +9,6 @@ import { createDataStream } from 'ai';
 dotenv.config();
 
 // Add after dotenv.config()
-const debugLog = (message, data = null) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${message}`);
-  if (data) console.log(JSON.stringify(data, null, 2));
-};
-
-// Add after dotenv.config()
 const requiredEnvVars = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
@@ -24,20 +17,14 @@ const requiredEnvVars = {
   VITE_FRONTEND_URL: process.env.VITE_FRONTEND_URL
 };
 
-const missingVars = Object.entries(requiredEnvVars)
-  .filter(([_, value]) => !value)
-  .map(([key]) => key);
-
-if (missingVars.length > 0) {
-  debugLog('Missing required environment variables:', {
-    missing: missingVars
-  });
-  process.exit(1);
-}
-console.log(requiredEnvVars);
-
-const fastify = Fastify({ logger: true });
+const fastify = Fastify();
 const callStatuses = new Map(); // Add this to store call statuses
+
+// Middleware to log incoming requests
+fastify.addHook('onRequest', (request, reply, done) => {
+  console.log(`Incoming request: ${request.method} ${request.url}`);
+  done();
+});
 
 // Register plugins
 fastify.register(fastifyFormBody);
@@ -68,7 +55,6 @@ const LOG_EVENT_TYPES = [
 // Modified initiate-call endpoint
 fastify.post('/api/initiate-call', async (request, reply) => {
   try {
-    debugLog('Received call initiation request:', request.body);
     
     const { companyName, phoneNumber, jobTitle, targetSkillsQualities, additionalInstructions } = request.body;
     const callId = new Date().toISOString();
@@ -94,13 +80,7 @@ fastify.post('/api/initiate-call', async (request, reply) => {
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'failed', 'busy', 'no-answer'],
         statusCallbackMethod: 'POST'
       });
-      debugLog('Twilio call created:', { callSid: call.sid });
     } catch (twilioError) {
-      debugLog('Twilio call creation failed:', {
-        error: twilioError.message,
-        code: twilioError.code,
-        moreInfo: twilioError.moreInfo
-      });
       throw twilioError;
     }
 
@@ -112,10 +92,6 @@ fastify.post('/api/initiate-call', async (request, reply) => {
       message: 'Call initiated successfully'
     });
   } catch (error) {
-    debugLog('Call initiation failed:', {
-      error: error.message,
-      stack: error.stack
-    });
     reply.code(500).send({ 
       error: 'Failed to initiate call', 
       details: error.message,
@@ -126,13 +102,18 @@ fastify.post('/api/initiate-call', async (request, reply) => {
 
 fastify.all('/api/incoming-call', async (request, reply) => {
   const callId = request.query.callId || request.body.callId;
+  const serverUrl = process.env.VERCEL_URL || process.env.SERVER_URL;
+  console.log("incoming-call callId:", callId)
+  // Ensure we're using https for the stream URL
+  const streamUrl = `${serverUrl}/api/media-stream?callId=${callId}`;
+  console.log("/api/incoming-call streamUrl", streamUrl)
+
 
   const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
     <Response>
       <Say>Connecting you to the interviewer...</Say>
       <Connect>
-        <Stream url="${process.env.SERVER_URL}/api/media-stream">
-          <Parameter name="callId" value="${callId}"/>
+        <Stream url="${streamUrl}">
         </Stream>
       </Connect>
     </Response>`;
@@ -143,7 +124,7 @@ fastify.all('/api/incoming-call', async (request, reply) => {
 // Change from POST to handle both GET and POST
 fastify.route({
   method: ['GET', 'POST'],
-  url: '/api/media-stream/:callId',
+  url: '/api/media-stream',
   handler: async (request, reply) => {
     try {
       const callId = request.params.callId || request.query.callId || request.body.callId || request.body.parameters.callId;
