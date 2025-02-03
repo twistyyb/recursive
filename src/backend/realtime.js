@@ -1,3 +1,4 @@
+// This file for reference only, the latest is at index.js
 import WebSocket from 'ws';
 import dotenv from 'dotenv';
 import Fastify from 'fastify';
@@ -5,9 +6,6 @@ import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
 import fastifyCors from '@fastify/cors';
 import Pusher from 'pusher';
-import twilio from 'twilio';
-import { openai } from '@ai-sdk/openai';
-import { createDataStream } from 'ai';
 
 dotenv.config();
 
@@ -378,41 +376,6 @@ const safePusherTrigger = async (channel, event, data) => {
     throw error;
   }
 };
-
-fastify.post('/api/media-stream', async (request, reply) => {
-  const { callId, media } = request.body;
-
-  if (!callId || !media) {
-    return reply.code(400).send({ error: 'callId and media are required' });
-  }
-
-  const instruction = activeCallInstructions.get(callId);
-  if (!instruction) {
-    return reply.code(404).send({ error: 'No active call found for this callId' });
-  }
-
-  try {
-    const openaiResponse = await openai.audio.realtime.process({
-      model: 'gpt-4o-realtime-preview-2024-10-01',
-      audio: media,
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'realtime=v1'
-      }
-    });
-
-    // Handle OpenAI response chunks
-    for await (const chunk of openaiResponse) {
-      // Process the chunk as needed
-      // You can send the processed data back to the client or store it
-    }
-
-    return reply.send({ success: true });
-  } catch (error) {
-    console.error('Error processing audio:', error);
-    return reply.code(500).send({ error: 'Failed to process audio' });
-  }
-});
 
 fastify.listen({ port: PORT }, (err) => {
   if (err) {

@@ -1,7 +1,8 @@
+// Backend for making a call using the user-prompted question and response system
 require('dotenv').config();
 // Download the helper library from https://www.twilio.com/docs/node/install
 const twilio = require("twilio"); // Or, for ESM: import twilio from "twilio";
-const {db, doc, updateDoc} = require("./firebase.cjs");
+const {db, doc, updateDoc} = require("./firebase.ts");
 
 // Find your Account SID and Auth Token at twilio.com/console
 // and set the environment variables. See http://twil.io/secure

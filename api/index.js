@@ -1,3 +1,4 @@
+// Full functioning of the aiConfig.tsx file. Makes AI call and process streamed data from OpenAI
 import WebSocket from 'ws';
 import dotenv from 'dotenv';
 import Fastify from 'fastify';

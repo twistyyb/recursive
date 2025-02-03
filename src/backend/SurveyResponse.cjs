@@ -1,3 +1,4 @@
+// Handle survey response and survey progress
 require('dotenv').config();
 const { 
     db, 
@@ -10,7 +11,7 @@ const {
     doc, 
     updateDoc,
     getDoc 
-} = require("./firebase.cjs");
+} = require("./firebase.js");
 const { getFirestore } = require('firebase/firestore');
 
 // Export functions that server.cjs will use
