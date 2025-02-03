@@ -99,7 +99,7 @@ const TextArea = styled.textarea`
   border: 1px solid #d1d5db;
   border-radius: 0.375rem;
   resize: vertical;
-  min-height: 100px;
+  min-height: 50px;
   box-sizing: border-box;
   margin-right: 1rem;
 

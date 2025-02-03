@@ -10,6 +10,7 @@ const Title = styled.h1`
   font-family: monospace;
   font-weight: 700;
   font-size: 2.5rem;
+  margin-top: 0;
   margin-bottom: 0.5rem;
 `;
 
