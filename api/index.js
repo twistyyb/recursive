@@ -71,6 +71,21 @@ const LOG_EVENT_TYPES = [
 const activeCallInstructions = new Map();
 const callStatuses = new Map();
 
+// Store active call data
+const activeCalls = new Map();
+
+// Polling endpoint
+fastify.get('/api/poll', async (request, reply) => {
+  const callId = request.query.callId; // Get callId from query parameters
+  if (!callId || !activeCalls.has(callId)) {
+    return reply.code(404).send({ error: 'No active call found' });
+  }
+
+  // Retrieve the latest data for the call
+  const callData = activeCalls.get(callId);
+  return reply.send(callData);
+});
+
 fastify.get('/', async (request, reply) => {
   reply.send({message: 'Twilio Media Stream Server is running!'})
 });

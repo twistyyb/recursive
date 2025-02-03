@@ -6,14 +6,14 @@ import Login from './components/Login';
 import { useApiInitialization } from './api';
 
 const Title = styled.h1`
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-family: monospace;
   font-weight: 700;
   font-size: 2.5rem;
   margin-bottom: 0.5rem;
 `;
 
 const Subtitle = styled.p`
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-family: monospace;
   font-style: italic;
   font-size: 0.875rem;
   font-weight: 900;

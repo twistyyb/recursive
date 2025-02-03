@@ -5,6 +5,10 @@
   text-align: center;
 }
 
+body {
+  font-family: monospace;
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;

@@ -24,8 +24,9 @@ const Button = styled.button`
   border: none;
   cursor: pointer;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background-color: #2563eb;
+    cursor: arrow;
   }
 
   &:disabled {
@@ -37,25 +38,25 @@ const Input = styled.input`
   padding: 0.5rem;
   border: 1px solid #d1d5db;
   border-radius: 0.25rem;
+  font-family: monospace;
 `
 
 const PhoneInput = styled(Input)<{ $isValid?: boolean }>`
-  margin-right: 16px;
+  
   border-color: ${props => props.$isValid ? '#4CAF50' : '#ccc'};
   height: 38px;
   box-sizing: border-box;
-  padding: 8px 16px;
-  width: calc(33.33% - 16px);
+  padding: 8px;
+  font-family: monospace;
 `
 
 const CallButton = styled(Button)`
-  width: 66.66%;
+  width: 50%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   padding: 8px 16px;
   min-width: 200px;
-  max-width: 66.66%;
 `
 
 const ErrorMessage = styled.p`
@@ -71,14 +72,17 @@ const StatusMessage = styled.p<{ $isError?: boolean }>`
 
 const PhoneInputGroup = styled.div`
   display: flex;
-  align-items: center;
+  flex-direction: row;
   margin-top: 16px;
-  width: 100%;
+  justify-content: space-between;
 `
 
 const InputGroup = styled.div`
-  margin-bottom: 1rem;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.8rem;
 `
+
 
 const Label = styled.label`
   display: block;
@@ -86,6 +90,7 @@ const Label = styled.label`
   font-weight: 700;
   color: #374151;
   margin-bottom: 0.5rem;
+
 `
 
 const TextArea = styled.textarea`
@@ -108,19 +113,22 @@ const TextArea = styled.textarea`
 const SkillItem = styled.div`
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
 `
 
 const DeleteButton = styled.button`
+  justify-content: left;
   color: #ef4444;
-  padding: 0.25rem, 0.5rem;
+  padding: 0.20rem, 0.5rem;
   background: white;
   cursor: pointer;
   font-weight: bold;
   font-size: 1rem;
+  border: 1px solid #ef4444;
 
   &:hover:not(:disabled) {
     color:rgb(168, 29, 29);
+    border-color:rgb(168, 29, 29);
   }
 
   &:disabled {
@@ -132,14 +140,14 @@ const DeleteButton = styled.button`
 
 const AddButton = styled.button`
   color: #9ca3af;
-  padding: 0.1rem 0.1rem;
-  border: none;
+  padding: 0.10rem, 0.5rem;
+  border: 1px solid #9ca3af;
   background: none;
   cursor: pointer;
-  font-size: 1.5rem;
-  width: 100%;
+  font-size: 1rem;
   text-align: center;
-  padding-left: 0.5rem;
+  margin-top: 10 pt;
+  margin-bottom: 0.2rem;
 
   &:hover {
     color: #374151;
@@ -154,7 +162,9 @@ const RequiredStar = styled.span`
 export function AiConfig() {
   const [callStatus, setCallStatus] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
-  const [phoneNumber, setPhoneNumber] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('7473347145')
+  const [phoneNumber2, setPhoneNumber2] = useState('8445417040')
+  const [validatedPhone2, setValidatedPhone2] = useState<PhoneResult | null>(phone('8445417040'))
   const [validatedPhone, setValidatedPhone] = useState<PhoneResult | null>(phone('7473347145'))
   const [isCallActive, setIsCallActive] = useState(false)
   const [callSid, setCallSid] = useState<string | null>(null)
@@ -171,6 +181,14 @@ export function AiConfig() {
     const result = phone(input)
     setValidatedPhone(result.isValid ? result : null)
   }
+
+  const handlePhoneChange2 = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target.value
+    setPhoneNumber2(input)
+    const result = phone(input)
+    setValidatedPhone2(result.isValid ? result : null)
+  }
+
 
   const handleCreateCall = async (number: string) => {
     setIsLoading(true)
@@ -357,21 +375,35 @@ export function AiConfig() {
           />
         </InputGroup>
         <PhoneInputGroup>
-        <PhoneInput
-          type="tel"
-          value={phoneNumber}
-          onChange={handlePhoneChange}
-          placeholder="Enter phone number (e.g. +1234567890)"
-          $isValid={validatedPhone?.isValid}
-        />
+          <InputGroup>
+          <Label>User Phone Number</Label>
+            <PhoneInput
+              type="tel"
+              value={phoneNumber}
+              onChange={handlePhoneChange}
+              placeholder="Enter User Phone Number"
+              $isValid={validatedPhone?.isValid}
+            />
+            <ErrorMessage>{!validatedPhone?.isValid && phoneNumber && 'Invalid Phone Number'}</ErrorMessage>
+          </InputGroup>
+          <InputGroup>
+            <Label>AI Phone Number</Label>
+            <PhoneInput
+              type="tel"
+              value={phoneNumber2}
+              onChange={handlePhoneChange2}
+              placeholder="Enter AI Phone Number"
+              $isValid={validatedPhone2?.isValid}
+            />
+            <ErrorMessage>{!validatedPhone2?.isValid && phoneNumber2 && 'Invalid Phone Number'}</ErrorMessage>
+          </InputGroup>
+        </PhoneInputGroup>
         <CallButton
           onClick={() => validatedPhone?.isValid ? handleCreateCall(validatedPhone.phoneNumber) : undefined}
           disabled={isLoading || !isFormValid()}
         >
           {isLoading ? 'Creating Call...' : `Start Interview Call`}
         </CallButton>
-        
-      </PhoneInputGroup>
       {!validatedPhone?.isValid && phoneNumber && (
         <ErrorMessage>
           Please enter a valid phone number with country code (e.g. +1234567890)
@@ -386,7 +418,7 @@ export function AiConfig() {
         <ErrorMessage>
           {!companyName.trim() && 'Company name is required. '}
           {!jobTitle.trim() && 'Job title is required. '}
-          {!validatedPhone?.isValid && phoneNumber && 'Please enter a valid phone number with country code (e.g. +1234567890)'}
+          
         </ErrorMessage>
       )}
       </div>
